@@ -44,8 +44,8 @@ import DatabaseConstructor from "better-sqlite3";
 
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
 const API_KEY = process.env.HERMES_API_KEY || "";
-const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 5000);
-const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 8000);
+const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 2000);
+const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 3000);
 const RUN_TIMEOUT_MS = Number(process.env.BRIDGE_RUN_TIMEOUT_MS || 900000);
 const KANBAN_DB_PATH = process.env.KANBAN_DB_PATH || "/hermes-ro/kanban.db";
 if (!API_KEY) { console.error("HERMES_API_KEY is required (matches API_SERVER_KEY on the Hermes container)"); process.exit(1); }

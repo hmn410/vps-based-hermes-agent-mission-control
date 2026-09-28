@@ -38,8 +38,8 @@ website  ◀──read HermesTask/────   Postgres  ◀──mirror──
 | `DATABASE_URL` | — (required) | same Postgres the website uses |
 | `HERMES_BOARD` | `default` | kanban board slug to mirror |
 | `HERMES_BIN` | `hermes` | path to the CLI if not on PATH |
-| `BRIDGE_POLL_MS` | `5000` | how often to check for new requests |
-| `BRIDGE_MIRROR_MS` | `30000` | how often to mirror kanban/cron/health |
+| `BRIDGE_POLL_MS` | `2000` | how often to check for new requests |
+| `BRIDGE_MIRROR_MS` | `3000` | how often to mirror kanban/cron/health |
 | `BRIDGE_RUN_TIMEOUT_MS` | `900000` | max time for one agent run (15 minutes) |
 
 ## Notes / assumptions

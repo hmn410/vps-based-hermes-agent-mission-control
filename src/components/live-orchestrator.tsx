@@ -207,7 +207,7 @@ export function LiveOrchestrator() {
 
   useEffect(() => {
     load();
-    const iv = setInterval(load, 3000); // fast poll — this panel is meant to feel live
+    const iv = setInterval(load, 1500); // fast poll — this panel is meant to feel live
     return () => clearInterval(iv);
   }, [load]);
 
