@@ -229,9 +229,18 @@ async function mirrorKanban() {
       ]
     );
   }
-  // Drop mirrored rows for tasks that no longer exist on the board (archived/purged).
+  // Drop mirrored rows for tasks that no longer exist on the board
+  // (archived/purged). Never do this on an empty read — a genuinely empty
+  // kanban board is not a realistic steady state here (there's always at
+  // least the recurring cron task), so 0 rows almost certainly means a
+  // transient SQLite read (e.g. mid-WAL-checkpoint) rather than a real
+  // "everything got deleted" — treat it as a skip, not a wipe.
+  if (rows.length === 0) {
+    log("mirrorKanban: read 0 tasks, skipping prune (treating as a transient read, not a real empty board)");
+    return;
+  }
   const ids = rows.map((t) => t.id);
-  await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids.length ? ids : [""]]);
+  await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids]);
 
   let events;
   try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); return; }
