@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Clock, Lightbulb, Check, X } from "lucide-react";
+import { Plus, Clock, Lightbulb, Check, X, Pencil, Trash2, RotateCcw, CheckCircle2 } from "lucide-react";
 import { Panel, Pill, Button, Skeleton, EmptyState, rise } from "@/components/ui/kit";
 
 interface Idea {
@@ -56,6 +56,9 @@ function formatDate(dateStr?: string) {
 function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [edit, setEdit] = useState({ title: idea.title, description: idea.description, category: idea.category || "build" });
+  const [busy, setBusy] = useState(false);
 
   const status = idea.status || "new";
   const statusConf = STATUS_CONFIG[status] || STATUS_CONFIG.new;
@@ -65,12 +68,32 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   const isApproved = status === "approved";
 
   const updateIdea = async (updates: Partial<Idea>) => {
-    await fetch("/api/ideas", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: idea.id, ...updates }),
-    });
-    onUpdate();
+    setBusy(true);
+    try {
+      await fetch("/api/ideas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: idea.id, ...updates }),
+      });
+      onUpdate();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteIdea = async () => {
+    if (!window.confirm(`Delete "${idea.title}"? This can't be undone.`)) return;
+    setBusy(true);
+    try {
+      await fetch("/api/ideas", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: idea.id }),
+      });
+      onUpdate();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleReject = async () => {
@@ -79,6 +102,59 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
     setIsRejecting(false);
     setRejectReason("");
   };
+
+  const startEdit = () => {
+    setEdit({ title: idea.title, description: idea.description, category: idea.category || "build" });
+    setIsEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!edit.title.trim() || !edit.description.trim()) return;
+    await updateIdea({ title: edit.title.trim(), description: edit.description.trim(), category: edit.category });
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <Panel className="p-5">
+        <span className="eyebrow">Edit Idea</span>
+        <div className="space-y-3 mt-3">
+          <input
+            type="text"
+            value={edit.title}
+            onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+            className={inputCls}
+            placeholder="Idea title"
+            autoFocus
+          />
+          <textarea
+            value={edit.description}
+            onChange={(e) => setEdit({ ...edit, description: e.target.value })}
+            className={`${inputCls} resize-none`}
+            placeholder="Describe the idea"
+            rows={4}
+          />
+          <select
+            value={edit.category}
+            onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+            className="w-full bg-[var(--surface-2)] border border-[var(--line)] text-[var(--text-2)] px-3 py-2.5 rounded-[var(--r-sm)] text-[13px] focus:outline-none focus:border-[var(--line-strong)]"
+          >
+            <option value="build">Build</option>
+            <option value="content">Content</option>
+            <option value="feature">Feature</option>
+            <option value="thread">Thread</option>
+            <option value="experiment">Experiment</option>
+          </select>
+          <div className="flex gap-2 pt-1">
+            <Button variant="primary" size="sm" onClick={saveEdit} disabled={busy || !edit.title.trim() || !edit.description.trim()}>
+              {busy ? "Saving..." : "Save"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancel</Button>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
 
   return (
     <Panel
@@ -107,7 +183,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
 
       {/* Title + description */}
       <h3 className="text-[14px] font-semibold text-[var(--text)] mb-1.5 leading-snug">{idea.title}</h3>
-      <p className="text-[var(--text-2)] text-[13px] leading-relaxed mb-4">{idea.description}</p>
+      <p className="text-[var(--text-2)] text-[13px] leading-relaxed mb-4 whitespace-pre-wrap">{idea.description}</p>
 
       {/* Rejection reason */}
       {status === "rejected" && idea.rejectionReason && (
@@ -130,31 +206,86 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
       )}
 
       {/* Actions */}
-      {!isDead && !isApproved && !isRejecting && (
-        <div className="flex gap-2">
+      {!isRejecting && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {!isDead && !isApproved && (
+            <>
+              <button
+                onClick={() => updateIdea({ status: "approved" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+              >
+                <Check className="w-3 h-3" />
+                Approve
+              </button>
+              <button
+                onClick={() => setIsRejecting(true)}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                style={{ color: "var(--down)", borderColor: "color-mix(in srgb, var(--down) 24%, transparent)" }}
+              >
+                <X className="w-3 h-3" />
+                Reject
+              </button>
+            </>
+          )}
+
+          {isApproved && (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--up)" }}>
+                <Check className="w-3 h-3" />
+                Approved
+              </span>
+              <button
+                onClick={() => updateIdea({ status: "done" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                Mark Done
+              </button>
+              <button
+                onClick={() => updateIdea({ status: "considering" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Revert
+              </button>
+            </>
+          )}
+
+          {isDead && (
+            <button
+              onClick={() => updateIdea({ status: "considering" })}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reopen
+            </button>
+          )}
+
+          {/* Always-available: edit + delete */}
           <button
-            onClick={() => updateIdea({ status: "approved" })}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors"
-            style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+            onClick={startEdit}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
           >
-            <Check className="w-3 h-3" />
-            Approve
+            <Pencil className="w-3 h-3" />
+            Edit
           </button>
           <button
-            onClick={() => setIsRejecting(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors"
+            onClick={deleteIdea}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 ml-auto"
             style={{ color: "var(--down)", borderColor: "color-mix(in srgb, var(--down) 24%, transparent)" }}
           >
-            <X className="w-3 h-3" />
-            Reject
+            <Trash2 className="w-3 h-3" />
+            Delete
           </button>
-        </div>
-      )}
-
-      {isApproved && (
-        <div className="flex items-center gap-1.5 text-[12px]" style={{ color: "var(--up)" }}>
-          <Check className="w-3 h-3" />
-          <span>Approved</span>
         </div>
       )}
 
