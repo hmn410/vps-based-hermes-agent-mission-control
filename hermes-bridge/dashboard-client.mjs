@@ -89,11 +89,10 @@ async function dashboardFetch(path, { method = "GET", body } = {}) {
   return data;
 }
 
-// Creates a real kanban task — triaged, unassigned by default so the
-// configured orchestrator profile (kanban.orchestrator_profile /
-// default_assignee in config.yaml) picks it up and routes it exactly like a
-// Telegram/CLI-originated ask.
-export async function kanbanCreateTask({ title, body, assignee = null, triage = true }) {
+// Creates a real kanban task, assigned to the default worker by default so
+// it dispatches immediately — same fast path as a Telegram/CLI-originated
+// ask (bypasses the triage hop unless the caller explicitly opts in).
+export async function kanbanCreateTask({ title, body, assignee = "default", triage = false }) {
   const data = await dashboardFetch("/api/plugins/kanban/tasks", {
     method: "POST",
     body: { title: title.slice(0, 200), body: body || null, assignee, triage },

@@ -318,7 +318,8 @@ async function runRequest(r) {
       const task = await kanbanCreateTask({
         title: r.title,
         body: r.prompt && r.prompt !== r.title ? r.prompt : null,
-        triage: true, // orchestrator profile routes it, same as any other inbound ask
+        assignee: "default", // skip triage hop — dispatch straight to the default
+        triage: false,       // worker, exactly like Telegram/CLI-originated tasks
       });
       // Hand off to the kanban lifecycle — leave status as 'running' so it
       // reads as "in flight" on the website; syncKanbanLinkedRequests()
