@@ -37,6 +37,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
+import { kanbanCreateTask, dashboardConfigured } from "./dashboard-client.mjs";
 import DatabaseConstructor from "better-sqlite3";
 
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
@@ -178,7 +179,8 @@ function readKanbanTasks() {
     return db.prepare(
       `SELECT id, title, status, assignee, priority, result,
               started_at, completed_at, worker_pid, worker_started_at,
-              last_heartbeat_at, current_run_id, block_kind, current_step_key
+              last_heartbeat_at, current_run_id, block_kind, current_step_key,
+              last_failure_error
        FROM tasks ORDER BY status ASC, priority DESC LIMIT 200`
     ).all();
   } finally {
@@ -209,19 +211,21 @@ async function mirrorKanban() {
          (id, board, title, assignee, status, priority, result,
           "startedAt", "completedAt", "workerPid", "workerStartedAt",
           "lastHeartbeatAt", "currentRunId", "blockKind", "currentStepKey",
-          "updatedAt", "syncedAt")
-       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, now(), now())
+          "lastFailureError", "updatedAt", "syncedAt")
+       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, $15, now(), now())
        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, assignee=EXCLUDED.assignee,
          status=EXCLUDED.status, priority=EXCLUDED.priority, result=EXCLUDED.result,
          "startedAt"=EXCLUDED."startedAt", "completedAt"=EXCLUDED."completedAt",
          "workerPid"=EXCLUDED."workerPid", "workerStartedAt"=EXCLUDED."workerStartedAt",
          "lastHeartbeatAt"=EXCLUDED."lastHeartbeatAt", "currentRunId"=EXCLUDED."currentRunId",
          "blockKind"=EXCLUDED."blockKind", "currentStepKey"=EXCLUDED."currentStepKey",
+         "lastFailureError"=EXCLUDED."lastFailureError",
          "updatedAt"=now(), "syncedAt"=now()`,
       [
         t.id, t.title, t.assignee, t.status, t.priority ?? 0, t.result ?? null,
         toDate(t.started_at), toDate(t.completed_at), t.worker_pid ?? null, t.worker_started_at ?? null,
         toDate(t.last_heartbeat_at), t.current_run_id ?? null, t.block_kind ?? null, t.current_step_key ?? null,
+        t.last_failure_error ?? null,
       ]
     );
   }
@@ -268,14 +272,40 @@ async function maybeDailyBrief() {
 }
 
 /* ─────────────── PUSH: run website requests via Hermes ─────────────── */
+// oneshot/chat dispatches from the website now become REAL kanban tasks —
+// triaged so the configured orchestrator profile picks them up, assigns
+// them, and runs them exactly like a Telegram-originated ask. The request
+// row is linked via hermesTaskId and its status/result are synced from the
+// mirrored HermesTask row by syncKanbanLinkedRequests() below, not written
+// here — this function only creates the task and marks the handoff done.
 async function runRequest(r) {
   if (!await claimRequest(q, r.id)) return;
   await emit("run", `Started: ${r.title}`, { level: "info", meta: { requestId: r.id, kind: r.kind } });
   try {
-    let result = "";
     if (r.kind === "oneshot" || r.kind === "chat") {
-      result = (await hermesChat(r.prompt || r.title)).trim();
-    } else if (r.kind === "briefing.generate") {
+      if (!dashboardConfigured()) {
+        // Fallback: no dashboard credentials configured, run as a plain chat
+        // reply like before (no kanban task, no live orchestrator tracking).
+        const result = (await hermesChat(r.prompt || r.title)).trim();
+        await q(`UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+          [r.id, result.slice(0, 8000)]);
+        await emit("run", `Done: ${r.title}`, { level: "up", detail: result.slice(0, 400), meta: { requestId: r.id } });
+        return;
+      }
+      const task = await kanbanCreateTask({
+        title: r.title,
+        body: r.prompt && r.prompt !== r.title ? r.prompt : null,
+        triage: true, // orchestrator profile routes it, same as any other inbound ask
+      });
+      // Hand off to the kanban lifecycle — leave status as 'running' so it
+      // reads as "in flight" on the website; syncKanbanLinkedRequests()
+      // takes over from here and mirrors real kanban status/result in.
+      await q(`UPDATE "AgentRequest" SET "hermesTaskId"=$2, "updatedAt"=now() WHERE id=$1`, [r.id, task.id]);
+      await emit("run", `Queued as kanban task ${task.id}: ${r.title}`, { level: "info", meta: { requestId: r.id, taskId: task.id } });
+      return;
+    }
+    let result = "";
+    if (r.kind === "briefing.generate") {
       await generateBriefing();
       lastBriefDate = new Date().toISOString().slice(0, 10);
       result = "brief updated";
@@ -332,11 +362,41 @@ async function processQueue() {
   for (const r of rows) await runRequest(r);
 }
 
+/* ─────────────── Sync kanban-linked AgentRequest rows ─────────────── */
+// For website dispatches that became kanban tasks: reflect the task's real
+// lifecycle (running/blocked/review/done) back onto the AgentRequest row so
+// /hermes shows accurate status instead of staying stuck on "running".
+const KANBAN_DONE = new Set(["done", "completed", "archived"]);
+async function syncKanbanLinkedRequests() {
+  const { rows } = await q(
+    `SELECT id, "hermesTaskId" FROM "AgentRequest"
+     WHERE "hermesTaskId" IS NOT NULL AND status NOT IN ('done','failed','rejected')`
+  );
+  for (const r of rows) {
+    const { rows: taskRows } = await q(`SELECT status, result FROM "HermesTask" WHERE id=$1`, [r.hermesTaskId]);
+    const task = taskRows[0];
+    if (!task) continue; // not mirrored yet this tick, or task was archived off the board
+    const norm = String(task.status || "").toLowerCase();
+    if (KANBAN_DONE.has(norm)) {
+      await q(
+        `UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+        [r.id, (task.result || "Task completed on the kanban board.").slice(0, 8000)]
+      );
+    } else if (norm === "blocked") {
+      // Surface as a visible status on the website without hard-failing —
+      // the task is still alive on the board and can be unblocked there.
+      await q(`UPDATE "AgentRequest" SET status='running', "updatedAt"=now() WHERE id=$1`, [r.id]);
+    }
+    // else: still triage/todo/ready/running/review — leave AgentRequest as 'running'.
+  }
+}
+
 /* ─────────────── loops ─────────────── */
 async function mirrorTick() {
   try { await mirrorHealth(); } catch (e) { log("mirrorHealth err", e.message); }
   try { await mirrorCrons(); } catch (e) { log("mirrorCrons err", e.message); }
   try { await mirrorKanban(); } catch (e) { log("mirrorKanban err", e.message); }
+  try { await syncKanbanLinkedRequests(); } catch (e) { log("syncKanbanLinkedRequests err", e.message); }
   try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
 }
 

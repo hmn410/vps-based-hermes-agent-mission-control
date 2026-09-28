@@ -498,6 +498,7 @@ model HermesTask {
   currentRunId    Int?
   blockKind       String?
   currentStepKey  String?
+  lastFailureError String? @db.Text
   updatedAt       DateTime  @default(now())
   syncedAt        DateTime  @updatedAt
 
