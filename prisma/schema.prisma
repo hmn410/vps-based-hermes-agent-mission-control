@@ -483,16 +483,40 @@ model AgentEvent {
 }
 
 model HermesTask {
-  id        String   @id                   // Hermes task id
-  board     String   @default("default")
-  title     String
-  assignee  String?
-  status    String   @default("todo")
-  priority  Int?
-  result    String?
-  updatedAt DateTime @default(now())
-  syncedAt  DateTime @updatedAt
+  id              String    @id                   // Hermes task id
+  board           String    @default("default")
+  title           String
+  assignee        String?
+  status          String    @default("todo")
+  priority        Int?
+  result          String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  workerPid       Int?
+  workerStartedAt String?
+  lastHeartbeatAt DateTime?
+  currentRunId    Int?
+  blockKind       String?
+  currentStepKey  String?
+  updatedAt       DateTime  @default(now())
+  syncedAt        DateTime  @updatedAt
 
   @@index([board])
   @@index([status])
+}
+
+// Mirrors kanban `task_events` — the play-by-play behind each task (claimed,
+// spawned, heartbeat, commented, completed, blocked, ...) so the dashboard
+// can show a live "what's it doing right now" feed, not just a status pill.
+model HermesTaskEvent {
+  id        Int      @id                   // kanban task_events.id (source of truth, not autoinc here)
+  taskId    String
+  runId     Int?
+  kind      String
+  payload   String?  @db.Text              // raw JSON string from kanban, parsed client-side
+  createdAt DateTime
+  syncedAt  DateTime @default(now())
+
+  @@index([taskId])
+  @@index([createdAt])
 }

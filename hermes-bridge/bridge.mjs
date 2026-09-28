@@ -42,7 +42,7 @@ import DatabaseConstructor from "better-sqlite3";
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
 const API_KEY = process.env.HERMES_API_KEY || "";
 const POLL_MS = Number(process.env.BRIDGE_POLL_MS || 5000);
-const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 30000);
+const MIRROR_MS = Number(process.env.BRIDGE_MIRROR_MS || 8000);
 const RUN_TIMEOUT_MS = Number(process.env.BRIDGE_RUN_TIMEOUT_MS || 900000);
 const KANBAN_DB_PATH = process.env.KANBAN_DB_PATH || "/hermes-ro/kanban.db";
 if (!API_KEY) { console.error("HERMES_API_KEY is required (matches API_SERVER_KEY on the Hermes container)"); process.exit(1); }
@@ -176,28 +176,73 @@ function readKanbanTasks() {
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
     return db.prepare(
-      `SELECT id, title, status, assignee, priority, result FROM tasks ORDER BY status ASC, priority DESC LIMIT 200`
+      `SELECT id, title, status, assignee, priority, result,
+              started_at, completed_at, worker_pid, worker_started_at,
+              last_heartbeat_at, current_run_id, block_kind, current_step_key
+       FROM tasks ORDER BY status ASC, priority DESC LIMIT 200`
     ).all();
   } finally {
     db.close();
   }
 }
+// Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
+// — the live "what's it doing" feed. Kanban timestamps are unix seconds.
+function readKanbanEvents(limit = 150) {
+  if (!fs.existsSync(KANBAN_DB_PATH)) return [];
+  const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
+  try {
+    return db.prepare(
+      `SELECT id, task_id, run_id, kind, payload, created_at
+       FROM task_events ORDER BY id DESC LIMIT ?`
+    ).all(limit);
+  } finally {
+    db.close();
+  }
+}
+const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
 async function mirrorKanban() {
   let rows;
   try { rows = readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
   for (const t of rows) {
     await q(
-      `INSERT INTO "HermesTask" (id, board, title, assignee, status, priority, result, "updatedAt", "syncedAt")
-       VALUES ($1,'default',$2,$3,$4,$5,$6, now(), now())
+      `INSERT INTO "HermesTask"
+         (id, board, title, assignee, status, priority, result,
+          "startedAt", "completedAt", "workerPid", "workerStartedAt",
+          "lastHeartbeatAt", "currentRunId", "blockKind", "currentStepKey",
+          "updatedAt", "syncedAt")
+       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, now(), now())
        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, assignee=EXCLUDED.assignee,
          status=EXCLUDED.status, priority=EXCLUDED.priority, result=EXCLUDED.result,
+         "startedAt"=EXCLUDED."startedAt", "completedAt"=EXCLUDED."completedAt",
+         "workerPid"=EXCLUDED."workerPid", "workerStartedAt"=EXCLUDED."workerStartedAt",
+         "lastHeartbeatAt"=EXCLUDED."lastHeartbeatAt", "currentRunId"=EXCLUDED."currentRunId",
+         "blockKind"=EXCLUDED."blockKind", "currentStepKey"=EXCLUDED."currentStepKey",
          "updatedAt"=now(), "syncedAt"=now()`,
-      [t.id, t.title, t.assignee, t.status, t.priority ?? 0, t.result ?? null]
+      [
+        t.id, t.title, t.assignee, t.status, t.priority ?? 0, t.result ?? null,
+        toDate(t.started_at), toDate(t.completed_at), t.worker_pid ?? null, t.worker_started_at ?? null,
+        toDate(t.last_heartbeat_at), t.current_run_id ?? null, t.block_kind ?? null, t.current_step_key ?? null,
+      ]
     );
   }
   // Drop mirrored rows for tasks that no longer exist on the board (archived/purged).
   const ids = rows.map((t) => t.id);
   await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids.length ? ids : [""]]);
+
+  let events;
+  try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); return; }
+  for (const e of events) {
+    await q(
+      `INSERT INTO "HermesTaskEvent" (id, "taskId", "runId", kind, payload, "createdAt", "syncedAt")
+       VALUES ($1,$2,$3,$4,$5,$6, now())
+       ON CONFLICT (id) DO NOTHING`,
+      [e.id, e.task_id, e.run_id ?? null, e.kind, e.payload ?? null, toDate(e.created_at)]
+    );
+  }
+  // Keep the mirrored event log bounded — prune anything older than the newest 500.
+  await q(
+    `DELETE FROM "HermesTaskEvent" WHERE id NOT IN (SELECT id FROM "HermesTaskEvent" ORDER BY id DESC LIMIT 500)`
+  );
 }
 
 /* ─────────────── Chief-of-staff daily brief ─────────────── */

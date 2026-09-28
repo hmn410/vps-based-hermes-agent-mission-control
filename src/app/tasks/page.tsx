@@ -13,6 +13,7 @@ import {
   rise,
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
+import { LiveOrchestrator } from "@/components/live-orchestrator";
 
 // ── Types ─────────────────────────────────────────────────
 interface KanbanTask {
@@ -228,8 +229,8 @@ function OrchestratorBoard({
   return (
     <>
       <SectionHeader
-        label="Kanban orchestrator"
-        title="Where each task is assigned and running"
+        label="Kanban board"
+        title="Every task, by lifecycle column"
         action={
           <div className="flex items-center gap-3">
             <span className="num text-[12px] text-[var(--text-2)]">{total} total</span>
@@ -368,21 +369,30 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* Dispatch */}
+        {/* Live — the orchestrator's current activity, updates every few seconds */}
         <div className="hq-rise mb-12" style={rise(1)}>
+          <LiveOrchestrator />
+        </div>
+
+        {/* Dispatch */}
+        <div className="hq-rise mb-12" style={rise(2)}>
           <DispatchBar onDone={load} />
         </div>
 
-        {/* Dispatch pipeline — queued/running/done/failed for what's been sent */}
+        {/* History — everything already sent + the full kanban lifecycle board */}
+        <div className="hq-rise mb-3" style={rise(3)}>
+          <Eyebrow>History</Eyebrow>
+          <h2 className="mt-1.5 text-[15px] font-medium text-[var(--text-2)]">Past runs and the full board</h2>
+        </div>
+
         <section className="mb-12">
           <HermesDispatches />
         </section>
 
-        {/* Kanban orchestrator board — where tasks are assigned + their live status */}
         <section>
           {!loaded ? (
             <>
-              <SectionHeader label="Kanban orchestrator" title="Where each task is assigned and running" />
+              <SectionHeader label="Kanban board" title="Every task, by lifecycle column" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Skeleton className="h-48" />
                 <Skeleton className="h-48" />
