@@ -317,7 +317,12 @@ async function runRequest(r) {
       }
       const task = await kanbanCreateTask({
         title: r.title,
-        body: r.prompt && r.prompt !== r.title ? r.prompt : null,
+        body: [
+          r.prompt && r.prompt !== r.title ? r.prompt : r.title,
+          "",
+          "---",
+          "This is a direct question/request from a human via the Hermy HQ dashboard chat — not an internal handoff task. When you finish, call kanban_complete with the FULL, complete answer text in the `summary` field (not a short 1-3 sentence handoff — write out the entire response the human should read, as long as it needs to be).",
+        ].join("\n"),
         assignee: "default", // skip triage hop — dispatch straight to the default
         triage: false,       // worker, exactly like Telegram/CLI-originated tasks
       });
