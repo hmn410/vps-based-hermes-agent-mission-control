@@ -58,18 +58,37 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      # Only the main .db file is mounted — NOT its -wal/-shm sidecars.
-      # Those two are dynamically deleted/recreated by SQLite as writer
-      # connections open and close; if that happens at the exact instant
-      # Docker (re)creates this container, Docker silently creates an empty
-      # DIRECTORY at that host path instead of erroring, permanently
-      # breaking the bind mount until someone notices and fixes it by hand.
-      # We only ever read this DB (readonly, fileMustExist) for a live
-      # status mirror — occasionally missing the last few WAL-only writes
-      # (visible again after the writer's next auto-checkpoint, ~1000
-      # pages or on connection close) is a far better failure mode here
-      # than a container that silently stops starting.
-      - /docker/hermes-agent-mnis/data/kanban.db:/hermes-ro/kanban.db:ro
+      # Mounts the MIRROR DIRECTORY, not the single kanban.db file inside it.
+      # This matters: a bind mount of a single FILE binds to that exact
+      # inode at container-start time — if the host later replaces the file
+      # via an atomic rename (which snapshot-kanban-mirror.py does, to
+      # avoid the bridge ever reading a half-written file), a single-file
+      # mount can keep serving the ORIGINAL, now-stale inode forever,
+      # silently never updating again. Mounting the parent directory
+      # avoids this: path lookups inside a directory mount are resolved
+      # fresh on every access, so a rename'd-in replacement file is seen
+      # immediately, exactly like reading it directly on the host would be.
+      #
+      # A cron job on the Hermes agent side (snapshot-kanban-mirror.py,
+      # every 1m) copies the live WAL-mode kanban.db via SQLite's own
+      # backup API into kanban-mirror/kanban.db and converts it to plain
+      # rollback-journal mode (PRAGMA journal_mode=DELETE) — a mode that
+      # needs zero -wal/-shm sidecar files, ever, to be read.
+      #
+      # Why not mount the live kanban.db directly: its -wal/-shm sidecars
+      # are dynamically deleted/recreated by SQLite as the real
+      # orchestrator's writer connections open and close. If a container
+      # (re)create ever lands in the instant those sidecars don't exist,
+      # Docker silently creates an empty DIRECTORY at that host path
+      # instead of erroring, permanently breaking the bind mount. This
+      # mirror file never has sidecars to begin with, so that failure mode
+      # is structurally impossible here.
+      #
+      # Trade-off: kanban state on the website can lag up to ~1 minute
+      # behind the real orchestrator (the snapshot interval) instead of
+      # being byte-for-byte live — a deliberate trade for total stability
+      # after repeated mount crashes/corruption on earlier attempts.
+      - /docker/hermes-agent-mnis/data/kanban-mirror:/hermes-ro:ro
     security_opt:
       - no-new-privileges:true
 
