@@ -37,7 +37,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
-import { kanbanCreateTask, kanbanGetBoard, dashboardConfigured } from "./dashboard-client.mjs";
+import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } from "./dashboard-client.mjs";
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows } from "./kanban-reader.mjs";
 import DatabaseConstructor from "better-sqlite3";
