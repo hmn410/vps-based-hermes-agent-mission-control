@@ -2,71 +2,54 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { signOut } from "next-auth/react";
 import {
   Home,
-  Twitter,
-  Play,
   Bot,
   Lightbulb,
-  Flower2,
-  FileText,
   ClipboardList,
-  HeartPulse,
   Cpu,
-  BookOpen,
-  Workflow,
   Menu,
   X,
+  LogOut,
 } from "lucide-react";
 
 const navGroups = [
   {
-    name: "Overview",
+    name: "Mission Control",
     items: [
-      { href: "/", label: "Dashboard", icon: Home },
-      { href: "/hermes", label: "Hermes", icon: Cpu },
+      { href: "/", label: "Morning Brief", icon: Home },
+      { href: "/hermes", label: "Dispatch Terminal", icon: Cpu },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
     ],
   },
   {
-    name: "Content",
-    items: [
-      { href: "/x", label: "X", icon: Twitter },
-      { href: "/content-os", label: "Pipeline", icon: Workflow },
-      { href: "/articles", label: "Articles", icon: FileText },
-      { href: "/youtube", label: "YouTube", icon: Play },
-    ],
-  },
-  {
-    name: "Data",
-    items: [
-      { href: "/client-pulse", label: "Client Pulse", icon: HeartPulse },
-    ],
-  },
-  {
-    name: "System",
+    name: "Workspace",
     items: [
       { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/memory-wiki", label: "Memory Wiki", icon: BookOpen },
       { href: "/ideas", label: "Ideas", icon: Lightbulb },
-      { href: "/garden", label: "Garden", icon: Flower2 },
     ],
   },
 ];
 
-// Mobile tab bar - only show the 5 most important
+// Mobile tab bar - personal operations only
 const mobileTabsRaw = [
-  { href: "/", label: "Dashboard", icon: Home },
-  { href: "/x", label: "X", icon: Twitter },
-  { href: "/youtube", label: "YouTube", icon: Play },
-  { href: "/ideas", label: "Ideas", icon: Lightbulb },
+  { href: "/", label: "Brief", icon: Home },
+  { href: "/hermes", label: "Dispatch", icon: Cpu },
+  { href: "/tasks", label: "Tasks", icon: ClipboardList },
   { href: "/agents", label: "Agents", icon: Bot },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = useCallback(() => {
+    setSigningOut(true);
+    signOut({ callbackUrl: "/login" });
+  }, []);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -97,13 +80,23 @@ export function Sidebar() {
       {/* Mobile header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-b border-[var(--line)] px-4 py-3 flex items-center justify-between">
         <Logo />
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="p-2 text-[var(--text-2)] hover:text-[var(--text)] transition-colors rounded-lg hover:bg-[var(--surface-1)]"
-          aria-label="Toggle menu"
-        >
-          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="p-2 text-[var(--text-2)] hover:text-[var(--text)] transition-colors rounded-lg hover:bg-[var(--surface-1)] disabled:opacity-50"
+            aria-label="Sign out"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-2 text-[var(--text-2)] hover:text-[var(--text)] transition-colors rounded-lg hover:bg-[var(--surface-1)]"
+            aria-label="Toggle menu"
+          >
+            {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile bottom tab bar */}
@@ -218,7 +211,7 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="px-4 py-4 border-t border-[var(--line)]">
+        <div className="px-4 py-4 border-t border-[var(--line)] space-y-3">
           <div className="flex items-center gap-2 text-[var(--text-3)] text-[11.5px]">
             <span className="relative flex w-1.5 h-1.5">
               <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--up)] opacity-60 animate-ping" />
@@ -226,6 +219,14 @@ export function Sidebar() {
             </span>
             <span>All systems online</span>
           </div>
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="w-full flex items-center gap-2.5 px-3 py-[7px] rounded-[10px] text-[13.5px] font-medium text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-1)] transition-colors disabled:opacity-50"
+          >
+            <LogOut className="w-[17px] h-[17px] shrink-0" />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
         </div>
       </aside>
     </>

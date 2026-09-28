@@ -203,7 +203,7 @@ function InboxCard({
 }
 
 // ── Main ──────────────────────────────────────────────────
-export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
+export function ApprovalInbox({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
   const [requests, setRequests] = useState<Req[]>([]);
   const [pending, setPending] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -239,7 +239,7 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
   const visible = compact ? requests.slice(0, 3) : requests;
 
   return (
-    <div>
+    <div className={`flex h-full flex-col ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <Eyebrow>Approval inbox</Eyebrow>
@@ -249,7 +249,7 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
       </div>
 
       {loaded && requests.length === 0 ? (
-        <Panel className="p-2">
+        <Panel className="flex-1 p-2">
           <EmptyState
             icon={<Check className="w-6 h-6" style={{ color: "var(--up)" }} />}
             title="Nothing needs you right now — you're clear."
@@ -258,14 +258,14 @@ export function ApprovalInbox({ compact = false }: { compact?: boolean }) {
         </Panel>
       ) : requests.length === 0 ? (
         // pre-load: keep it calm, mirror empty framing
-        <Panel className="p-2">
+        <Panel className="flex-1 p-2">
           <EmptyState
             icon={<Inbox className="w-6 h-6" />}
             title="Checking the queue…"
           />
         </Panel>
       ) : (
-        <div className={`flex flex-col ${compact ? "gap-2.5" : "gap-4"}`}>
+        <div className={`min-h-0 flex-1 overflow-y-auto pr-1 flex flex-col ${compact ? "gap-2.5" : "gap-4"}`}>
           {visible.map((req) => (
             <InboxCard
               key={req.id}

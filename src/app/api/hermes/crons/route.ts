@@ -64,7 +64,8 @@ export async function POST(req: Request) {
   if (!["create", "pause", "resume", "run", "remove", "edit"].includes(op))
     return NextResponse.json({ error: "bad op" }, { status: 400 });
   const label = op === "create" ? `Schedule: ${b.schedule || "?"} — ${b.prompt || b.name || ""}` : `Cron ${op}: ${b.name || b.id || ""}`;
-  const sideEffecting = op === "create" || op === "edit" || op === "remove";
+  // A cron changes future agent behavior; every mutation waits for human approval.
+  const sideEffecting = true;
   const row = await prisma.agentRequest.create({
     data: {
       origin: "web",

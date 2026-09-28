@@ -496,24 +496,3 @@ model HermesTask {
   @@index([board])
   @@index([status])
 }
-
-// ─── Hermes Memory Wiki (warm tier — git-tracked markdown, mirrored) ─────
-model HermesMemory {
-  id         String    @id            // wiki entry slug (relative path w/o .md)
-  path       String                   // file path relative to wiki root
-  type       String    @default("fact")
-  title      String
-  status     String    @default("active")
-  confidence String?
-  provenance String?
-  tags       String[]
-  links      String[]
-  body       String    @default("")
-  validFrom  DateTime?
-  validTo    DateTime?
-  updatedAt  DateTime  @default(now())
-  syncedAt   DateTime  @updatedAt
-
-  @@index([type])
-  @@index([status])
-}

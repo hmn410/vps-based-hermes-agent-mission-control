@@ -40,7 +40,7 @@ website  ◀──read HermesTask/────   Postgres  ◀──mirror──
 | `HERMES_BIN` | `hermes` | path to the CLI if not on PATH |
 | `BRIDGE_POLL_MS` | `5000` | how often to check for new requests |
 | `BRIDGE_MIRROR_MS` | `30000` | how often to mirror kanban/cron/health |
-| `BRIDGE_RUN_TIMEOUT_MS` | `240000` | max time for one agent run |
+| `BRIDGE_RUN_TIMEOUT_MS` | `900000` | max time for one agent run (15 minutes) |
 
 ## Notes / assumptions
 - CLI arg shapes (`hermes kanban create <title>`, `hermes cron create <schedule> <prompt>`) are best-effort for Hermes v0.17.x — if your build differs, tweak `runRequest()` in `bridge.mjs`.

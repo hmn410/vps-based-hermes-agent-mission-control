@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hermy_hq
+      POSTGRES_USER: hermy_hq
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - hermy_hq_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hermy_hq -d hermy_hq"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3001:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hermy-hq.rule=Host(`hq.joshbuilds.tech`)"
+      - "traefik.http.routers.hermy-hq.entrypoints=websecure"
+      - "traefik.http.routers.hermy-hq.tls=true"
+      - "traefik.http.routers.hermy-hq.tls.certresolver=letsencrypt"
+      - "traefik.http.services.hermy-hq.loadbalancer.server.port=3000"
+    security_opt:
+      - no-new-privileges:true
+
+  # Bridges Hermy HQ's Postgres to your actual Hermes install over HTTP:
+  # calls the Hermes gateway's built-in OpenAI-compatible API server
+  # (API_SERVER_ENABLED=true on the hermes-agent container, which is
+  # already attached to this hermy-hq_default network as "hermes-agent")
+  # instead of shelling into the `hermes` CLI or mounting its /opt/data
+  # volume — no concurrent access to the live agent's session/state files.
+  # Writes results (chief-of-staff brief, gmail overview, cron/kanban
+  # mirrors) back to Postgres for the website to read. Cron uses the API
+  # server's REST /api/jobs (no mount). Kanban has no HTTP API, so we
+  # bind-mount ONLY the kanban DB, read-only, from the real Hermes agent's
+  # data dir — never the full /opt/data. (Memory Wiki was removed from
+  # Hermy HQ entirely — it needed an always-on local machine to write to,
+  # which this VPS deployment doesn't have; ask the agent to "remember X"
+  # in chat instead, which still writes ~/.hermes/wiki directly.)
+  # HERMES_API_URL/HERMES_API_KEY come from .env.
+  hermes-bridge:
+    build: ./hermes-bridge
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /docker/hermes-agent-mnis/data/kanban.db:/hermes-ro/kanban.db:ro
+      - /docker/hermes-agent-mnis/data/kanban.db-wal:/hermes-ro/kanban.db-wal:ro
+      - /docker/hermes-agent-mnis/data/kanban.db-shm:/hermes-ro/kanban.db-shm:ro
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  hermy_hq_postgres:
+
+
