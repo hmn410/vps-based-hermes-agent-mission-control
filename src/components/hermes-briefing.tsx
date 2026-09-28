@@ -112,6 +112,7 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="min-h-full flex flex-col justify-center">
           {data!.greeting && (
             <p className="text-[15px] font-medium text-[var(--text)] mb-1.5">{data!.greeting}</p>
           )}
@@ -137,6 +138,7 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
               ))}
             </div>
           )}
+          </div>
         </div>
       )}
     </Panel>
