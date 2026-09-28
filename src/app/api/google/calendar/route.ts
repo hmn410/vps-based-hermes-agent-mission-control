@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getGoogleAuth, calendarClient } from "@/lib/google-client";
 import { classifyGoogleAction } from "@/lib/google-actions";
 
+export const dynamic = "force-dynamic";
+
 // GET ?start=&end= → list events in range (read-only, runs immediately)
 export async function GET(req: Request) {
   const auth = await getGoogleAuth();

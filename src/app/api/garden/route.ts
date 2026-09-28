@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = "force-dynamic";
+
 // Shared garden blob — same source as Marwa's dashboard (source of truth)
 const GARDEN_BLOB = 'https://jsonblob.com/api/jsonBlob/019cce3a-7bc9-7e88-9e8f-fe461957b1aa';
 

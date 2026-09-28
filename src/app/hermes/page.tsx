@@ -85,7 +85,7 @@ function timeAgo(d: string | null): string {
 
 async function getJSON<T>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) return null;
     return (await r.json()) as T;
   } catch {

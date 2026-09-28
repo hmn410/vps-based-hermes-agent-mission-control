@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 type AnalysisWithClient = Prisma.ClientPulseAnalysisGetPayload<{ include: { client: { include: { chats: true } } } }>;
 
 function asStringArray(value: unknown) {

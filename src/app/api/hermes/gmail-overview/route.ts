@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getGoogleAuth, gmailClient } from "@/lib/google-client";
 
+export const dynamic = "force-dynamic";
+
 function headerValue(headers: { name?: string | null; value?: string | null }[] | undefined, name: string) {
   return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? "";
 }

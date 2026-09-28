@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getGoogleAuth, gmailClient } from "@/lib/google-client";
 import { classifyGoogleAction } from "@/lib/google-actions";
 
+export const dynamic = "force-dynamic";
+
 function decodeBase64Url(s: string) {
   return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
 }

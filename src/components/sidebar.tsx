@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   LogOut,
+  Coins,
 } from "lucide-react";
 
 const navGroups = [
@@ -22,6 +23,7 @@ const navGroups = [
       { href: "/", label: "Morning Brief", icon: Home },
       { href: "/hermes", label: "Dispatch Terminal", icon: Cpu },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
+      { href: "/usage", label: "Usage", icon: Coins },
     ],
   },
   {

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   const take = Math.min(Number(new URL(req.url).searchParams.get("take") || 40), 100);
   const events = await prisma.agentEvent.findMany({ orderBy: { createdAt: "desc" }, take });
