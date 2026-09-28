@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid } from "lucide-react";
+import { RefreshCw, LayoutGrid, Unlock, Check, Archive } from "lucide-react";
 import {
   Panel,
   SectionHeader,
@@ -95,9 +95,32 @@ function toneVar(t: Tone): string {
 }
 
 // ── Kanban task card ──────────────────────────────────────
-function TaskCard({ task }: { task: KanbanTask }) {
+function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) {
   const col = columnFor(task.status);
   const tone = columnTone(col);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const act = async (action: "unblock" | "archive" | "complete", confirmMsg?: string) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusy(action);
+    try {
+      const r = await fetch(`/api/hermes/tasks/${task.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (r.ok) onActed();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Only surface actions that make sense to clear up from here — this is a
+  // shortcut for common cleanup, not a full kanban board replacement.
+  const showUnblock = col === "blocked";
+  const showComplete = col === "review" || col === "running";
+  const showArchive = col === "done";
+
   return (
     <div
       className="panel p-3.5"
@@ -120,6 +143,40 @@ function TaskCard({ task }: { task: KanbanTask }) {
           {task.result}
         </p>
       )}
+      {(showUnblock || showComplete || showArchive) && (
+        <div className="flex items-center gap-1.5 flex-wrap mt-2.5 pt-2.5 border-t border-[var(--line)]">
+          {showUnblock && (
+            <button
+              type="button"
+              onClick={() => act("unblock")}
+              disabled={busy !== null}
+              className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
+            >
+              <Unlock className="w-3 h-3" /> {busy === "unblock" ? "…" : "Unblock"}
+            </button>
+          )}
+          {showComplete && (
+            <button
+              type="button"
+              onClick={() => act("complete", `Mark "${task.title}" as done?`)}
+              disabled={busy !== null}
+              className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
+            >
+              <Check className="w-3 h-3" /> {busy === "complete" ? "…" : "Mark done"}
+            </button>
+          )}
+          {showArchive && (
+            <button
+              type="button"
+              onClick={() => act("archive", `Archive "${task.title}"? It will be removed from this board.`)}
+              disabled={busy !== null}
+              className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
+            >
+              <Archive className="w-3 h-3" /> {busy === "archive" ? "…" : "Archive"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -130,11 +187,13 @@ function KanbanBoard({
   total,
   lastSync,
   stale,
+  onActed,
 }: {
   tasks: KanbanTask[];
   total: number;
   lastSync: string | null;
   stale: boolean;
+  onActed: () => void;
 }) {
   const groups: Record<string, KanbanTask[]> = {};
   for (const t of tasks) {
@@ -178,7 +237,7 @@ function KanbanBoard({
                   {items.length === 0 ? (
                     <p className="text-[var(--text-4)] text-[12px] text-center py-4">—</p>
                   ) : (
-                    items.map((t) => <TaskCard key={t.id} task={t} />)
+                    items.map((t) => <TaskCard key={t.id} task={t} onActed={onActed} />)
                   )}
                 </div>
               </div>
@@ -313,7 +372,7 @@ export default function TasksPage() {
               </div>
             </>
           ) : (
-            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} stale={historyStale} />
+            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} stale={historyStale} onActed={load} />
           )}
         </section>
       </div>
