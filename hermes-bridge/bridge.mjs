@@ -422,13 +422,30 @@ async function processQueue() {
 const KANBAN_DONE = new Set(["done", "completed", "archived"]);
 async function syncKanbanLinkedRequests() {
   const { rows } = await q(
-    `SELECT id, "hermesTaskId" FROM "AgentRequest"
+    `SELECT id, "hermesTaskId", "createdAt" FROM "AgentRequest"
      WHERE "hermesTaskId" IS NOT NULL AND status NOT IN ('done','failed','rejected')`
   );
   for (const r of rows) {
     const { rows: taskRows } = await q(`SELECT status, result FROM "HermesTask" WHERE id=$1`, [r.hermesTaskId]);
     const task = taskRows[0];
-    if (!task) continue; // not mirrored yet this tick, or task was archived off the board
+    if (!task) {
+      // Genuinely missing from the mirror. Give the mirror a grace window
+      // (a few mirror cycles) in case this was just created and hasn't been
+      // picked up yet — but if it's been missing for a while, the kanban
+      // task was archived/purged off the board and will NEVER reappear, so
+      // leaving this AgentRequest at 'running' forever (as previously
+      // happened) is a real bug, not a transient race. Mark it done with an
+      // honest note instead of leaving it stuck in the dashboard's "in
+      // flight" list indefinitely.
+      const ageMs = Date.now() - new Date(r.createdAt).getTime();
+      if (ageMs > 2 * 60 * 1000) {
+        await q(
+          `UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+          [r.id, "This task's kanban card was removed from the board before it could be synced back (e.g. archived during a fix/deploy). No result is available."]
+        );
+      }
+      continue;
+    }
     const norm = String(task.status || "").toLowerCase();
     if (KANBAN_DONE.has(norm)) {
       await q(
