@@ -28,9 +28,17 @@ export async function POST() {
   if (pending) return NextResponse.json({ request: pending, queued: false });
 
   const gmail = gmailClient(auth);
-  const list = await gmail.users.messages.list({ userId: "me", q: "in:inbox is:unread", maxResults: 20 });
+  // Gmail's messages.list `resultSizeEstimate` is an INDEX ESTIMATE for
+  // search queries — it can be wildly inflated (this is why the overview
+  // was showing e.g. 201 unread when the real inbox was nowhere near that).
+  // The INBOX label's `messagesUnread` field is an exact, maintained counter
+  // — use that as the real total instead.
+  const [list, inboxLabel] = await Promise.all([
+    gmail.users.messages.list({ userId: "me", q: "in:inbox is:unread", maxResults: 20 }),
+    gmail.users.labels.get({ userId: "me", id: "INBOX" }),
+  ]);
   const ids = list.data.messages ?? [];
-  const total = list.data.resultSizeEstimate ?? ids.length;
+  const total = inboxLabel.data.messagesUnread ?? ids.length;
 
   if (ids.length === 0) {
     await prisma.dataStore.upsert({
