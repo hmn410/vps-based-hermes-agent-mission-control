@@ -185,7 +185,31 @@ async function readKanbanTasks() {
   // The dashboard API is the source of truth and excludes archived cards by
   // default. Preserve its lifecycle-column order while flattening for HQ's
   // Postgres projection.
-  return (board?.columns || []).flatMap((column) => column.tasks || []);
+  const rows = (board?.columns || []).flatMap((column) => column.tasks || []);
+  // The board-listing endpoint returns a short RESULT PREVIEW per card (for
+  // compact board display), not the full answer — that preview (~200 chars)
+  // is what was leaking into the website's dispatch answers, truncating them
+  // mid-sentence. The full answer actually lives in the task detail's
+  // `latest_summary` / `runs[].summary` (kanban_complete's summary field,
+  // not task.result, which stays null unless a worker sets it explicitly).
+  // For finished tasks, fetch the canonical full detail so the mirror (and
+  // the dispatch chat downstream) gets the complete answer.
+  const TERMINAL = new Set(["done", "completed", "archived"]);
+  await Promise.all(
+    rows
+      .filter((t) => TERMINAL.has(String(t.status || "").toLowerCase()))
+      .map(async (t) => {
+        try {
+          const full = await kanbanGetTask(t.id);
+          const runSummary = full?.runs?.[full.runs.length - 1]?.summary;
+          const fullAnswer = full?.task?.result || full?.task?.latest_summary || runSummary;
+          if (fullAnswer) t.result = fullAnswer;
+        } catch (e) {
+          log("kanban full-task fetch err", t.id, e.message);
+        }
+      })
+  );
+  return rows;
 }
 // Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
 // — the live "what's it doing" feed. Kanban timestamps are unix seconds.
