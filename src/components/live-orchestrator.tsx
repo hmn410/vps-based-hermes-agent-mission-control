@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionHeader, Panel, Pill, EmptyState, Skeleton } from "@/components/ui/kit";
 import { Cpu, Activity } from "lucide-react";
+import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
 
 // ── Types (mirrors HermesTask / HermesTaskEvent from the API) ───────
 interface LiveTask {
@@ -41,8 +42,6 @@ function ago(d: string | null): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-// Orchestrator lifecycle — active means "not resolved yet".
-const ACTIVE_STATUSES = new Set(["triage", "todo", "ready", "running", "review", "blocked"]);
 function normStatus(s: string): string {
   return s.toLowerCase().replace(/[\s_-]+/g, "");
 }
@@ -117,7 +116,7 @@ function LiveTaskCard({ task, events }: { task: LiveTask; events: TaskEvent[] })
   const meta = statusMeta(task.status);
   const running = normStatus(task.status).includes("running");
   const latest = events[0];
-  const heartbeatStale = task.lastHeartbeatAt && Date.now() - new Date(task.lastHeartbeatAt).getTime() > 120000;
+
 
   return (
     <Panel className="p-4">
@@ -140,7 +139,7 @@ function LiveTaskCard({ task, events }: { task: LiveTask; events: TaskEvent[] })
           </div>
           <div className="flex items-center gap-2 flex-wrap mt-2">
             <Pill tone={meta.tone}>{meta.label}</Pill>
-            {task.assignee && <span className="num text-[10.5px] text-[var(--text-3)]">→ {task.assignee}</span>}
+            {task.assignee && <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>}
             {task.currentRunId != null && (
               <span className="num text-[10.5px] text-[var(--text-3)]">run #{task.currentRunId}</span>
             )}
@@ -150,7 +149,7 @@ function LiveTaskCard({ task, events }: { task: LiveTask; events: TaskEvent[] })
               </span>
             )}
             {task.lastHeartbeatAt && (
-              <span className={`num text-[10.5px] ${heartbeatStale ? "text-[var(--warn)]" : "text-[var(--text-3)]"}`}>
+              <span className="num text-[10.5px] text-[var(--text-3)]">
                 ♥ {ago(task.lastHeartbeatAt)}
               </span>
             )}
@@ -188,14 +187,19 @@ export function LiveOrchestrator() {
   const [tasks, setTasks] = useState<LiveTask[]>([]);
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [snapshotStale, setSnapshotStale] = useState(false);
+  const lastTasks = useRef<LiveTask[]>([]);
 
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/hermes/tasks");
       if (r.ok) {
         const d = await r.json();
-        setTasks(d.tasks ?? []);
-        setEvents(d.events ?? []);
+        const snapshot = keepLastKnownSnapshot(lastTasks.current, d.tasks ?? [], d.confirmedEmpty === true);
+        lastTasks.current = snapshot.items;
+        setTasks(snapshot.items);
+        setSnapshotStale(snapshot.stale);
+        if (!snapshot.stale && Array.isArray(d.events)) setEvents(d.events);
       }
     } catch { /* ignore */ }
     setLoaded(true);
@@ -232,7 +236,7 @@ export function LiveOrchestrator() {
         action={
           <span className="inline-flex items-center gap-1.5 num text-[11px] text-[var(--text-3)]">
             <Activity className="w-3.5 h-3.5" style={{ color: runningCount > 0 ? "var(--accent)" : undefined }} />
-            {runningCount > 0 ? `${runningCount} running` : "idle"}
+            {snapshotStale ? "showing last successful snapshot" : runningCount > 0 ? `${runningCount} running` : "idle"}
           </span>
         }
       />

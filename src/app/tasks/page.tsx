@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, LayoutGrid } from "lucide-react";
 import {
   Panel,
@@ -12,6 +12,7 @@ import {
   rise,
 } from "@/components/ui/kit";
 import { LiveOrchestrator } from "@/components/live-orchestrator";
+import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
 
 // ── Types ─────────────────────────────────────────────────
 interface KanbanTask {
@@ -108,7 +109,7 @@ function TaskCard({ task }: { task: KanbanTask }) {
       <div className="flex items-center gap-2 flex-wrap mt-2.5">
         <Pill tone={tone}>{COLUMN_LABEL[col]}</Pill>
         {task.assignee && (
-          <span className="num text-[10.5px] text-[var(--text-3)]">→ {task.assignee}</span>
+          <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>
         )}
         {task.priority != null && task.priority > 0 && (
           <span className="num text-[10.5px] text-[var(--text-3)] ml-auto">P{task.priority}</span>
@@ -128,10 +129,12 @@ function KanbanBoard({
   tasks,
   total,
   lastSync,
+  stale,
 }: {
   tasks: KanbanTask[];
   total: number;
   lastSync: string | null;
+  stale: boolean;
 }) {
   const groups: Record<string, KanbanTask[]> = {};
   for (const t of tasks) {
@@ -147,7 +150,9 @@ function KanbanBoard({
         action={
           <div className="flex items-center gap-3">
             <span className="num text-[12px] text-[var(--text-2)]">{total} total</span>
-            <span className="num text-[11px] text-[var(--text-3)]">synced {timeAgo(lastSync)}</span>
+            <span className={`num text-[11px] ${stale ? "text-[var(--warn)]" : "text-[var(--text-3)]"}`}>
+              {stale ? "showing last successful snapshot" : `synced ${timeAgo(lastSync)}`}
+            </span>
           </div>
         }
       />
@@ -196,6 +201,8 @@ export default function TasksPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [historyStale, setHistoryStale] = useState(false);
+  const lastTasks = useRef<KanbanTask[]>([]);
 
   const load = useCallback(async () => {
     const tk = await getJSON<{
@@ -203,12 +210,18 @@ export default function TasksPage() {
       counts: Record<string, number>;
       total: number;
       lastSync: string;
+      confirmedEmpty: boolean;
     }>("/api/hermes/tasks");
     if (tk) {
-      setTasks(tk.tasks ?? []);
-      setTaskTotal(tk.total ?? tk.tasks?.length ?? 0);
-      setTaskSync(tk.lastSync ?? null);
-      setCounts(tk.counts ?? {});
+      const snapshot = keepLastKnownSnapshot(lastTasks.current, tk.tasks ?? [], tk.confirmedEmpty === true);
+      lastTasks.current = snapshot.items;
+      setTasks(snapshot.items);
+      setHistoryStale(snapshot.stale);
+      if (!snapshot.stale) {
+        setTaskTotal(tk.total ?? tk.tasks?.length ?? 0);
+        setTaskSync(tk.lastSync ?? null);
+        setCounts(tk.counts ?? {});
+      }
     }
     setLoaded(true);
   }, []);
@@ -300,7 +313,7 @@ export default function TasksPage() {
               </div>
             </>
           ) : (
-            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} />
+            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} stale={historyStale} />
           )}
         </section>
       </div>

@@ -38,6 +38,8 @@ import { randomUUID } from "node:crypto";
 import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
 import { kanbanCreateTask, dashboardConfigured } from "./dashboard-client.mjs";
+import { resolveMirroredTaskResult } from "./result-resolver.mjs";
+import { readKanbanTaskRows } from "./kanban-reader.mjs";
 import DatabaseConstructor from "better-sqlite3";
 
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
@@ -166,23 +168,13 @@ async function mirrorCrons() {
 
 /* ─────────────── Kanban mirror (read-only sqlite mount) ─────────────── */
 function readKanbanTasks() {
-  if (!fs.existsSync(KANBAN_DB_PATH)) return [];
-  // Plain readonly open: needs the sibling -wal/-shm files to exist as
-  // regular files (not the DB itself being writable) for SQLite's WAL
-  // locking bytes. compose.yaml must bind-mount all three by exact path —
-  // if a sibling doesn't exist on the host yet, Docker silently creates a
-  // DIRECTORY there instead of failing, which corrupts the real files for
-  // every other consumer of this same DB. Never mount a WAL/SHM path that
-  // doesn't already exist as a plain file on the host.
+  if (!fs.existsSync(KANBAN_DB_PATH)) throw new Error(`kanban snapshot missing: ${KANBAN_DB_PATH}`);
+  // KANBAN_DB_PATH is a stable rollback-journal snapshot generated beside
+  // the live WAL database. The bridge must never open the live database or
+  // dynamically-created WAL/SHM sidecars from a read-only bind mount.
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
-    return db.prepare(
-      `SELECT id, title, status, assignee, priority, result,
-              started_at, completed_at, worker_pid, worker_started_at,
-              last_heartbeat_at, current_run_id, block_kind, current_step_key,
-              last_failure_error
-       FROM tasks ORDER BY status ASC, priority DESC LIMIT 200`
-    ).all();
+    return readKanbanTaskRows(db);
   } finally {
     db.close();
   }
@@ -205,6 +197,19 @@ const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
 async function mirrorKanban() {
   let rows;
   try { rows = readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
+  await setStore("hermes-kanban-mirror", {
+    sourceReadAt: new Date().toISOString(),
+    taskCount: rows.length,
+    confirmedEmpty: rows.length === 0,
+  });
+  let events = [];
+  try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); }
+  const eventsByTask = new Map();
+  for (const event of events) {
+    const bucket = eventsByTask.get(event.task_id) || [];
+    bucket.push(event);
+    eventsByTask.set(event.task_id, bucket);
+  }
   for (const t of rows) {
     await q(
       `INSERT INTO "HermesTask"
@@ -222,28 +227,29 @@ async function mirrorKanban() {
          "lastFailureError"=EXCLUDED."lastFailureError",
          "updatedAt"=now(), "syncedAt"=now()`,
       [
-        t.id, t.title, t.assignee, t.status, t.priority ?? 0, t.result ?? null,
+        t.id, t.title, t.assignee, t.status, t.priority ?? 0,
+        resolveMirroredTaskResult(
+          t,
+          [{ summary: t.run_summary }],
+          [{ kind: "completed", payload: t.completed_event_payload }, ...(eventsByTask.get(t.id) || [])],
+        ),
         toDate(t.started_at), toDate(t.completed_at), t.worker_pid ?? null, t.worker_started_at ?? null,
         toDate(t.last_heartbeat_at), t.current_run_id ?? null, t.block_kind ?? null, t.current_step_key ?? null,
         t.last_failure_error ?? null,
       ]
     );
   }
-  // Drop mirrored rows for tasks that no longer exist on the board
-  // (archived/purged). Never do this on an empty read — a genuinely empty
-  // kanban board is not a realistic steady state here (there's always at
-  // least the recurring cron task), so 0 rows almost certainly means a
-  // transient SQLite read (e.g. mid-WAL-checkpoint) rather than a real
-  // "everything got deleted" — treat it as a skip, not a wipe.
+  // Drop rows for tasks that no longer exist on the board (archived/purged).
+  // This is a completed rollback-journal snapshot, so a successful zero-row
+  // read is authoritative. A missing or unreadable snapshot throws above and
+  // never reaches this destructive path.
   if (rows.length === 0) {
-    log("mirrorKanban: read 0 tasks, skipping prune (treating as a transient read, not a real empty board)");
+    await q(`DELETE FROM "HermesTask" WHERE board='default'`);
     return;
   }
   const ids = rows.map((t) => t.id);
   await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids]);
 
-  let events;
-  try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); return; }
   for (const e of events) {
     await q(
       `INSERT INTO "HermesTaskEvent" (id, "taskId", "runId", kind, payload, "createdAt", "syncedAt")

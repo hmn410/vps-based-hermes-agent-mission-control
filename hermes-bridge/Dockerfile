@@ -9,6 +9,6 @@ WORKDIR /bridge
 RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
-COPY bridge.mjs command.mjs queue.mjs dashboard-client.mjs ./
+COPY bridge.mjs command.mjs queue.mjs dashboard-client.mjs result-resolver.mjs kanban-reader.mjs ./
 USER node
 ENTRYPOINT ["node", "bridge.mjs"]

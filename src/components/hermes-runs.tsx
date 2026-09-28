@@ -200,9 +200,14 @@ function UsageStrip({ cost }: { cost: Cost | null }) {
       </div>
 
       {cost?.summary && (
-        <p className="mt-4 text-[12.5px] text-[var(--text-2)] leading-snug">
-          {cost.summary}
-        </p>
+        <details className="mt-4 border-t border-[var(--line)] pt-3">
+          <summary className="cursor-pointer text-[11.5px] text-[var(--text-3)] hover:text-[var(--text-2)]">
+            Raw provider details
+          </summary>
+          <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[8px] bg-[var(--surface-2)] p-3 text-[11px] leading-relaxed text-[var(--text-3)]">
+            {cost.summary}
+          </pre>
+        </details>
       )}
 
       {byModel.length > 0 && (
@@ -398,10 +403,11 @@ export function HermesRuns() {
 
   useEffect(() => {
     mounted.current = true;
-    load();
+    const initial = window.setTimeout(() => { void load(); }, 0);
     const iv = setInterval(load, 8000);
     return () => {
       mounted.current = false;
+      window.clearTimeout(initial);
       clearInterval(iv);
     };
   }, [load]);
