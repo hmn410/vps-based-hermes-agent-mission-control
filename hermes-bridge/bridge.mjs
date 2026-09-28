@@ -37,7 +37,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
-import { kanbanCreateTask, dashboardConfigured } from "./dashboard-client.mjs";
+import { kanbanCreateTask, kanbanGetBoard, dashboardConfigured } from "./dashboard-client.mjs";
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows } from "./kanban-reader.mjs";
 import DatabaseConstructor from "better-sqlite3";
@@ -166,18 +166,26 @@ async function mirrorCrons() {
   await setStore("hermes-crons", { raw, syncedAt: new Date().toISOString() });
 }
 
-/* ─────────────── Kanban mirror (read-only sqlite mount) ─────────────── */
-function readKanbanTasks() {
+/* ─────────────── Kanban mirror (canonical dashboard API) ─────────────── */
+function readKanbanSnapshotTasks() {
   if (!fs.existsSync(KANBAN_DB_PATH)) throw new Error(`kanban snapshot missing: ${KANBAN_DB_PATH}`);
-  // KANBAN_DB_PATH is a stable rollback-journal snapshot generated beside
-  // the live WAL database. The bridge must never open the live database or
-  // dynamically-created WAL/SHM sidecars from a read-only bind mount.
+  // Compatibility fallback only: this is a stable rollback-journal snapshot,
+  // never the live WAL database.
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
     return readKanbanTaskRows(db);
   } finally {
     db.close();
   }
+}
+
+async function readKanbanTasks() {
+  if (!dashboardConfigured()) return readKanbanSnapshotTasks();
+  const board = await kanbanGetBoard(process.env.HERMES_BOARD || "default");
+  // The dashboard API is the source of truth and excludes archived cards by
+  // default. Preserve its lifecycle-column order while flattening for HQ's
+  // Postgres projection.
+  return (board?.columns || []).flatMap((column) => column.tasks || []);
 }
 // Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
 // — the live "what's it doing" feed. Kanban timestamps are unix seconds.
@@ -196,7 +204,7 @@ function readKanbanEvents(limit = 150) {
 const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
 async function mirrorKanban() {
   let rows;
-  try { rows = readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
+  try { rows = await readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
   await setStore("hermes-kanban-mirror", {
     sourceReadAt: new Date().toISOString(),
     taskCount: rows.length,
@@ -230,7 +238,7 @@ async function mirrorKanban() {
         t.id, t.title, t.assignee, t.status, t.priority ?? 0,
         resolveMirroredTaskResult(
           t,
-          [{ summary: t.run_summary }],
+          [{ summary: t.run_summary || t.latest_summary }],
           [{ kind: "completed", payload: t.completed_event_payload }, ...(eventsByTask.get(t.id) || [])],
         ),
         toDate(t.started_at), toDate(t.completed_at), t.worker_pid ?? null, t.worker_started_at ?? null,

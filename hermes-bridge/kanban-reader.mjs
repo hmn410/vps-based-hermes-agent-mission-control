@@ -10,6 +10,22 @@ export function readKanbanTaskRows(db, limit = 200) {
             (SELECT payload FROM task_events
              WHERE task_id = tasks.id AND kind = 'completed'
              ORDER BY id DESC LIMIT 1) AS completed_event_payload
-     FROM tasks ORDER BY status ASC, priority DESC LIMIT ?`
+     FROM tasks
+     WHERE status != 'archived'
+     ORDER BY
+       CASE status
+         WHEN 'triage' THEN 0
+         WHEN 'todo' THEN 1
+         WHEN 'ready' THEN 2
+         WHEN 'running' THEN 3
+         WHEN 'review' THEN 4
+         WHEN 'blocked' THEN 5
+         WHEN 'done' THEN 6
+         ELSE 7
+       END ASC,
+       CASE WHEN status = 'done' THEN completed_at END DESC,
+       priority DESC,
+       id ASC
+     LIMIT ?`
   ).all(limit);
 }

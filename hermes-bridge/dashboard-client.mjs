@@ -105,4 +105,12 @@ export async function kanbanGetTask(id) {
   return dashboardFetch(`/api/plugins/kanban/tasks/${id}`);
 }
 
+// Returns the dashboard's canonical board projection. Archived cards are not
+// included unless callers explicitly request them, so downstream mirrors cannot
+// mislabel archived work as active lifecycle cards.
+export async function kanbanGetBoard(board = "default") {
+  const params = new URLSearchParams({ board, _: String(Date.now()) });
+  return dashboardFetch(`/api/plugins/kanban/board?${params}`);
+}
+
 export { configured as dashboardConfigured };
