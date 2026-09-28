@@ -58,9 +58,18 @@ services:
       postgres:
         condition: service_healthy
     volumes:
+      # Only the main .db file is mounted — NOT its -wal/-shm sidecars.
+      # Those two are dynamically deleted/recreated by SQLite as writer
+      # connections open and close; if that happens at the exact instant
+      # Docker (re)creates this container, Docker silently creates an empty
+      # DIRECTORY at that host path instead of erroring, permanently
+      # breaking the bind mount until someone notices and fixes it by hand.
+      # We only ever read this DB (readonly, fileMustExist) for a live
+      # status mirror — occasionally missing the last few WAL-only writes
+      # (visible again after the writer's next auto-checkpoint, ~1000
+      # pages or on connection close) is a far better failure mode here
+      # than a container that silently stops starting.
       - /docker/hermes-agent-mnis/data/kanban.db:/hermes-ro/kanban.db:ro
-      - /docker/hermes-agent-mnis/data/kanban.db-wal:/hermes-ro/kanban.db-wal:ro
-      - /docker/hermes-agent-mnis/data/kanban.db-shm:/hermes-ro/kanban.db-shm:ro
     security_opt:
       - no-new-privileges:true
 
