@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Coins, RefreshCw, Cpu, Zap } from "lucide-react";
-import { Panel, Skeleton, EmptyState, rise } from "@/components/ui/kit";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { Coins, RefreshCw, Cpu, Zap, ChevronDown, ChevronRight } from "lucide-react";
+import { Panel, Pill, Skeleton, EmptyState, rise } from "@/components/ui/kit";
 
 interface ModelUsage {
   model: string;
@@ -78,64 +78,76 @@ const PROVIDER_LABEL: Record<string, string> = {
   google: "Google",
 };
 
-function ModelCard({ m }: { m: ModelUsage }) {
+// A card only earns a spot in the main list once it costs something or has
+// meaningful token volume — tiny/near-zero auxiliary rows (vision probes,
+// compression calls, stray session-only rows) get folded into a collapsed
+// "Minor / auxiliary" section instead of cluttering the primary view.
+const MINOR_TOKEN_THRESHOLD = 5000;
+function isMinor(m: ModelUsage) {
+  const tokens = (m.input_tokens || 0) + (m.output_tokens || 0);
+  return (m.estimated_cost || 0) === 0 && tokens < MINOR_TOKEN_THRESHOLD;
+}
+
+function ModelRow({ m, maxCost }: { m: ModelUsage; maxCost: number }) {
   const totalTokens = (m.input_tokens || 0) + (m.output_tokens || 0);
-  const providerLabel = PROVIDER_LABEL[m.provider] || m.provider || "Unknown provider";
+  const providerLabel = PROVIDER_LABEL[m.provider] || m.provider || "Unknown";
+  const barPct = maxCost > 0 ? Math.max(4, ((m.estimated_cost || 0) / maxCost) * 100) : 0;
+
   return (
-    <Panel className="p-5">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <h3 className="text-[14px] font-semibold text-[var(--text)] leading-snug">{m.model}</h3>
-          <p className="text-[11.5px] text-[var(--text-3)] mt-0.5">
-            {providerLabel}
-            {m.aux_task && <span className="text-[var(--text-4)]"> · {m.aux_task} (auxiliary)</span>}
-          </p>
-        </div>
-        <div className="text-right shrink-0">
-          <p className="num text-[16px] font-semibold text-[var(--text)]">{fmtCost(m.estimated_cost)}</p>
-          <p className="text-[10.5px] text-[var(--text-4)]">est. cost</p>
+    <div className="grid grid-cols-[1.6fr_0.9fr_0.9fr_0.7fr_0.9fr] items-center gap-3 px-4 py-3 border-b border-[var(--line)] last:border-b-0 hover:bg-[var(--surface-1)] transition-colors">
+      {/* Model + provider */}
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium text-[var(--text)] truncate">{m.model}</p>
+        <p className="text-[11px] text-[var(--text-4)] mt-0.5">
+          {providerLabel}
+          {m.aux_task && <span> · {m.aux_task}</span>}
+        </p>
+      </div>
+
+      {/* Cost, with a relative bar so the eye lands on the expensive ones */}
+      <div>
+        <p className="num text-[13px] font-semibold text-[var(--text)]">{fmtCost(m.estimated_cost)}</p>
+        <div className="h-1 rounded-full bg-[var(--surface-2)] mt-1 overflow-hidden">
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${barPct}%`, background: "var(--accent)" }}
+          />
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div>
-          <p className="num text-[13px] text-[var(--text)] font-medium">{fmtTokens(totalTokens)}</p>
-          <p className="text-[10.5px] text-[var(--text-4)]">total tokens</p>
-        </div>
-        <div>
-          <p className="num text-[13px] text-[var(--text)] font-medium">{m.sessions}</p>
-          <p className="text-[10.5px] text-[var(--text-4)]">sessions</p>
-        </div>
-        <div>
-          <p className="num text-[13px] text-[var(--text)] font-medium">{m.api_calls}</p>
-          <p className="text-[10.5px] text-[var(--text-4)]">API calls</p>
-        </div>
+      {/* Tokens */}
+      <div>
+        <p className="num text-[13px] text-[var(--text-2)]">{fmtTokens(totalTokens)}</p>
+        <p className="text-[10.5px] text-[var(--text-4)] mt-0.5">
+          {fmtTokens(m.input_tokens)} in · {fmtTokens(m.output_tokens)} out
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11.5px] border-t border-[var(--line)] pt-3">
-        <div className="flex justify-between">
-          <span className="text-[var(--text-3)]">Input</span>
-          <span className="num text-[var(--text-2)]">{fmtTokens(m.input_tokens)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[var(--text-3)]">Output</span>
-          <span className="num text-[var(--text-2)]">{fmtTokens(m.output_tokens)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[var(--text-3)]">Cache read</span>
-          <span className="num text-[var(--text-2)]">{fmtTokens(m.cache_read_tokens)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[var(--text-3)]">Reasoning</span>
-          <span className="num text-[var(--text-2)]">{fmtTokens(m.reasoning_tokens)}</span>
-        </div>
+      {/* Sessions / calls */}
+      <div>
+        <p className="num text-[13px] text-[var(--text-2)]">{m.sessions}</p>
+        <p className="text-[10.5px] text-[var(--text-4)] mt-0.5">{m.api_calls} calls</p>
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--line)] text-[11px] text-[var(--text-4)]">
-        <span>Avg {fmtTokens(m.avg_tokens_per_session)}/session</span>
-        <span>Last used {fmtRelative(m.last_used_at)}</span>
+      {/* Last used */}
+      <div className="text-right">
+        <p className="text-[11.5px] text-[var(--text-3)]">{fmtRelative(m.last_used_at)}</p>
       </div>
-    </Panel>
+    </div>
+  );
+}
+
+function MinorRow({ m }: { m: ModelUsage }) {
+  const totalTokens = (m.input_tokens || 0) + (m.output_tokens || 0);
+  const providerLabel = PROVIDER_LABEL[m.provider] || m.provider || "Unknown";
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-[var(--line)] last:border-b-0 text-[12px]">
+      <span className="text-[var(--text-2)] truncate">
+        {m.model} <span className="text-[var(--text-4)]">· {providerLabel}</span>
+        {m.aux_task && <span className="text-[var(--text-4)]"> · {m.aux_task}</span>}
+      </span>
+      <span className="num text-[var(--text-4)] shrink-0">{fmtTokens(totalTokens)} tok</span>
+    </div>
   );
 }
 
@@ -144,6 +156,7 @@ export default function UsagePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [days, setDays] = useState(30);
+  const [showMinor, setShowMinor] = useState(false);
 
   const load = useCallback(async (d: number) => {
     try {
@@ -168,7 +181,17 @@ export default function UsagePage() {
   };
 
   const totals = data?.totals;
-  const models = data?.models ?? [];
+  const allModels = data?.totals ? data.models : [];
+
+  const { active, minor, maxCost } = useMemo(() => {
+    const active: ModelUsage[] = [];
+    const minor: ModelUsage[] = [];
+    for (const m of allModels) (isMinor(m) ? minor : active).push(m);
+    active.sort((a, b) => (b.estimated_cost || 0) - (a.estimated_cost || 0));
+    minor.sort((a, b) => ((b.input_tokens || 0) + (b.output_tokens || 0)) - ((a.input_tokens || 0) + (a.output_tokens || 0)));
+    const maxCost = active.reduce((m, r) => Math.max(m, r.estimated_cost || 0), 0);
+    return { active, minor, maxCost };
+  }, [allModels]);
 
   if (loading) {
     return (
@@ -179,12 +202,9 @@ export default function UsagePage() {
             <Skeleton className="h-8 w-48" />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-2">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="panel p-5 space-y-3">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-10 w-full" />
-            </div>
+            <Skeleton key={i} className="h-14 w-full" />
           ))}
         </div>
       </div>
@@ -204,7 +224,8 @@ export default function UsagePage() {
             Token &amp; Cost Dashboard
           </h1>
           <p className="num text-[var(--text-4)] text-[12px] mt-3">
-            {models.length} model{models.length === 1 ? "" : "s"} · last {days} days
+            {active.length} active model{active.length === 1 ? "" : "s"}
+            {minor.length > 0 && ` · ${minor.length} minor`} · last {days} days
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -273,14 +294,47 @@ export default function UsagePage() {
         </div>
       )}
 
-      {/* Per-model cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {models.map((m, i) => (
-          <ModelCard key={`${m.model}-${m.provider}-${i}`} m={m} />
-        ))}
-      </div>
+      {/* Active models — table, sorted by cost desc, most-used stands out via bar */}
+      {active.length > 0 && (
+        <Panel className="p-0 overflow-hidden mb-6">
+          <div className="grid grid-cols-[1.6fr_0.9fr_0.9fr_0.7fr_0.9fr] gap-3 px-4 py-2.5 border-b border-[var(--line)] bg-[var(--surface-1)]">
+            <span className="text-[10.5px] uppercase tracking-wide text-[var(--text-4)]">Model</span>
+            <span className="text-[10.5px] uppercase tracking-wide text-[var(--text-4)]">Est. cost</span>
+            <span className="text-[10.5px] uppercase tracking-wide text-[var(--text-4)]">Tokens</span>
+            <span className="text-[10.5px] uppercase tracking-wide text-[var(--text-4)]">Sessions</span>
+            <span className="text-[10.5px] uppercase tracking-wide text-[var(--text-4)] text-right">Last used</span>
+          </div>
+          {active.map((m, i) => (
+            <ModelRow key={`${m.model}-${m.provider}-${i}`} m={m} maxCost={maxCost} />
+          ))}
+        </Panel>
+      )}
 
-      {models.length === 0 && !data?.error && (
+      {/* Minor / auxiliary — collapsed by default so it doesn't compete for attention */}
+      {minor.length > 0 && (
+        <Panel className="p-0 overflow-hidden">
+          <button
+            onClick={() => setShowMinor((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--surface-1)] transition-colors"
+          >
+            <span className="flex items-center gap-2 text-[12.5px] font-medium text-[var(--text-2)]">
+              {showMinor ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              Minor &amp; auxiliary usage
+              <Pill tone="neutral">{minor.length}</Pill>
+            </span>
+            <span className="text-[11px] text-[var(--text-4)]">No meaningful cost or token volume</span>
+          </button>
+          {showMinor && (
+            <div className="border-t border-[var(--line)]">
+              {minor.map((m, i) => (
+                <MinorRow key={`${m.model}-${m.provider}-minor-${i}`} m={m} />
+              ))}
+            </div>
+          )}
+        </Panel>
+      )}
+
+      {active.length === 0 && minor.length === 0 && !data?.error && (
         <div className="panel">
           <EmptyState
             icon={<Coins className="w-8 h-8" />}
