@@ -1,18 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, RefreshCw, LayoutGrid } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { RefreshCw, LayoutGrid } from "lucide-react";
 import {
   Panel,
   SectionHeader,
-  Button,
   Pill,
   EmptyState,
   Skeleton,
   Eyebrow,
   rise,
 } from "@/components/ui/kit";
-import { HermesDispatches } from "@/components/hermes-dispatches";
 import { LiveOrchestrator } from "@/components/live-orchestrator";
 
 // ── Types ─────────────────────────────────────────────────
@@ -25,10 +23,6 @@ interface KanbanTask {
   priority: number | null;
   result: string | null;
   syncedAt: string;
-}
-
-interface Req {
-  status: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -99,87 +93,6 @@ function toneVar(t: Tone): string {
   return t === "neutral" ? "var(--text-3)" : `var(--${t})`;
 }
 
-// ── Quick dispatch bar — send new work into the orchestrator ──
-function DispatchBar({ onDone }: { onDone: () => void }) {
-  const [text, setText] = useState("");
-  const [side, setSide] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flash = (msg: string) => {
-    setToast(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 4000);
-  };
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-
-  const submit = async () => {
-    const title = text.trim();
-    if (!title || busy) return;
-    setBusy(true);
-    try {
-      const r = await fetch("/api/hermes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "oneshot", title, sideEffecting: side }),
-      });
-      if (r.ok) {
-        setText("");
-        flash(side ? "Sent to approval inbox — awaiting your go-ahead." : "Queued for Hermes.");
-        onDone();
-      } else {
-        flash("Dispatch failed. Try again.");
-      }
-    } catch {
-      flash("Dispatch failed. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Panel className="p-5">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
-          placeholder="Send a new task to the orchestrator…"
-          className="flex-1 min-w-0 bg-transparent text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3.5 py-2.5 rounded-[10px] border border-[var(--line)] focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] outline-none transition-colors"
-        />
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={() => setSide((s) => !s)}
-            aria-pressed={side}
-            className="flex items-center gap-2 select-none"
-          >
-            <span
-              className="relative inline-flex h-[18px] w-[32px] rounded-full transition-colors"
-              style={{
-                background: side ? "color-mix(in srgb, var(--warn) 55%, transparent)" : "var(--surface-2)",
-                border: "1px solid var(--line)",
-              }}
-            >
-              <span
-                className="absolute top-[1px] h-[14px] w-[14px] rounded-full bg-[var(--text)] transition-all"
-                style={{ left: side ? "15px" : "1px" }}
-              />
-            </span>
-            <span className="text-[12px] font-medium text-[var(--text-2)]">side-effecting?</span>
-          </button>
-          <Button variant="primary" onClick={submit} disabled={busy || !text.trim()}>
-            <Send className="w-3.5 h-3.5" />
-            Dispatch
-          </Button>
-        </div>
-      </div>
-      {toast && <p className="mt-3 text-[12.5px] text-[var(--text-2)]">{toast}</p>}
-    </Panel>
-  );
-}
-
 // ── Kanban task card ──────────────────────────────────────
 function TaskCard({ task }: { task: KanbanTask }) {
   const col = columnFor(task.status);
@@ -210,8 +123,8 @@ function TaskCard({ task }: { task: KanbanTask }) {
   );
 }
 
-// ── Kanban orchestrator board ─────────────────────────────
-function OrchestratorBoard({
+// ── Kanban board — full lifecycle, the historical record ──
+function KanbanBoard({
   tasks,
   total,
   lastSync,
@@ -229,7 +142,7 @@ function OrchestratorBoard({
   return (
     <>
       <SectionHeader
-        label="Kanban board"
+        label="History"
         title="Every task, by lifecycle column"
         action={
           <div className="flex items-center gap-3">
@@ -273,30 +186,29 @@ function OrchestratorBoard({
 }
 
 // ── Main ──────────────────────────────────────────────────
+// This page is the orchestrator's own status view — live activity, then
+// history. Dispatching new work and the AgentRequest approval queue live
+// on /hermes; this page never touches that bus, only the kanban lifecycle.
 export default function TasksPage() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [taskTotal, setTaskTotal] = useState(0);
   const [taskSync, setTaskSync] = useState<string | null>(null);
-  const [pipelineCounts, setPipelineCounts] = useState<Record<string, number>>({});
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [tk, reqs] = await Promise.all([
-      getJSON<{ tasks: KanbanTask[]; counts: Record<string, number>; total: number; lastSync: string }>(
-        "/api/hermes/tasks"
-      ),
-      getJSON<{ requests: Req[] }>("/api/hermes/requests?take=100"),
-    ]);
+    const tk = await getJSON<{
+      tasks: KanbanTask[];
+      counts: Record<string, number>;
+      total: number;
+      lastSync: string;
+    }>("/api/hermes/tasks");
     if (tk) {
       setTasks(tk.tasks ?? []);
       setTaskTotal(tk.total ?? tk.tasks?.length ?? 0);
       setTaskSync(tk.lastSync ?? null);
-    }
-    if (reqs) {
-      const counts: Record<string, number> = {};
-      for (const r of reqs.requests ?? []) counts[r.status] = (counts[r.status] || 0) + 1;
-      setPipelineCounts(counts);
+      setCounts(tk.counts ?? {});
     }
     setLoaded(true);
   }, []);
@@ -313,11 +225,16 @@ export default function TasksPage() {
     setRefreshing(false);
   };
 
-  const queued = pipelineCounts.queued || 0;
-  const running = pipelineCounts.running || 0;
-  const awaiting = pipelineCounts.awaiting_approval || 0;
-  const done = pipelineCounts.done || 0;
-  const failed = pipelineCounts.failed || 0;
+  // Kanban lifecycle counts (not the dispatch/approval bus — that's on /hermes).
+  const countFor = (col: Column) =>
+    Object.entries(counts).reduce(
+      (sum, [status, n]) => (columnFor(status) === col ? sum + n : sum),
+      0
+    );
+  const running = countFor("running");
+  const blocked = countFor("blocked");
+  const review = countFor("review");
+  const done = countFor("done");
 
   return (
     <>
@@ -330,33 +247,29 @@ export default function TasksPage() {
               Task Orchestrator
             </h1>
             <p className="text-[13px] text-[var(--text-3)] mt-3">
-              Where every task is sent, who it&apos;s assigned to, and how it&apos;s running.
+              What the orchestrator is doing right now, and the full lifecycle history below.
             </p>
           </div>
           <div className="flex items-center gap-6">
             <div className="flex gap-6 text-center">
               <div>
-                <div className="num text-[20px] font-semibold leading-none text-[var(--text-2)]">{queued}</div>
-                <div className="eyebrow mt-1.5">Queued</div>
-              </div>
-              <div>
                 <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--accent)" }}>{running}</div>
                 <div className="eyebrow mt-1.5">Running</div>
               </div>
               <div>
-                <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--warn)" }}>{awaiting}</div>
-                <div className="eyebrow mt-1.5">Awaiting</div>
+                <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--warn)" }}>{review}</div>
+                <div className="eyebrow mt-1.5">Review</div>
               </div>
+              {blocked > 0 && (
+                <div>
+                  <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--down)" }}>{blocked}</div>
+                  <div className="eyebrow mt-1.5">Blocked</div>
+                </div>
+              )}
               <div>
                 <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--up)" }}>{done}</div>
                 <div className="eyebrow mt-1.5">Done</div>
               </div>
-              {failed > 0 && (
-                <div>
-                  <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--down)" }}>{failed}</div>
-                  <div className="eyebrow mt-1.5">Failed</div>
-                </div>
-              )}
             </div>
             <button
               type="button"
@@ -374,25 +287,11 @@ export default function TasksPage() {
           <LiveOrchestrator />
         </div>
 
-        {/* Dispatch */}
-        <div className="hq-rise mb-12" style={rise(2)}>
-          <DispatchBar onDone={load} />
-        </div>
-
-        {/* History — everything already sent + the full kanban lifecycle board */}
-        <div className="hq-rise mb-3" style={rise(3)}>
-          <Eyebrow>History</Eyebrow>
-          <h2 className="mt-1.5 text-[15px] font-medium text-[var(--text-2)]">Past runs and the full board</h2>
-        </div>
-
-        <section className="mb-12">
-          <HermesDispatches />
-        </section>
-
+        {/* History — the full kanban lifecycle board, below the live view */}
         <section>
           {!loaded ? (
             <>
-              <SectionHeader label="Kanban board" title="Every task, by lifecycle column" />
+              <SectionHeader label="History" title="Every task, by lifecycle column" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Skeleton className="h-48" />
                 <Skeleton className="h-48" />
@@ -401,7 +300,7 @@ export default function TasksPage() {
               </div>
             </>
           ) : (
-            <OrchestratorBoard tasks={tasks} total={taskTotal} lastSync={taskSync} />
+            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} />
           )}
         </section>
       </div>
