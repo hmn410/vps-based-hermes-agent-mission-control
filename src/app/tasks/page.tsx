@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, LayoutGrid, Unlock, Check, Archive } from "lucide-react";
+import { RefreshCw, LayoutGrid, Unlock, Check, Archive, X, Copy, ClipboardCheck } from "lucide-react";
 import {
   Panel,
   SectionHeader,
@@ -94,13 +94,105 @@ function toneVar(t: Tone): string {
   return t === "neutral" ? "var(--text-3)" : `var(--${t})`;
 }
 
+// ── Task detail modal — full title + full result, no truncation ──
+function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => void }) {
+  const col = columnFor(task.status);
+  const tone = columnTone(col);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const copyResult = async () => {
+    if (!task.result) return;
+    try {
+      await navigator.clipboard.writeText(task.result);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — silently ignore */
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm overflow-y-auto"
+      onClick={onClose}
+    >
+      <div
+        className="panel w-full max-w-2xl mt-10 sm:mt-0 max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-[var(--line)]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Pill tone={tone}>{COLUMN_LABEL[col]}</Pill>
+              {task.assignee && (
+                <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>
+              )}
+              <span className="num text-[10.5px] text-[var(--text-4)]">{task.id}</span>
+            </div>
+            <p className="mt-2 text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="btn-ghost inline-flex items-center justify-center w-8 h-8 shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4 overflow-y-auto grow">
+          {task.result ? (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <Eyebrow>Result</Eyebrow>
+                <button
+                  type="button"
+                  onClick={copyResult}
+                  className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px]"
+                >
+                  {copied ? <ClipboardCheck className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <p className="text-[13.5px] text-[var(--text-2)] leading-relaxed whitespace-pre-wrap">
+                {task.result}
+              </p>
+            </>
+          ) : (
+            <p className="text-[13px] text-[var(--text-3)]">No result recorded for this task yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Kanban task card ──────────────────────────────────────
-function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) {
+function TaskCard({
+  task,
+  onActed,
+  onOpen,
+}: {
+  task: KanbanTask;
+  onActed: () => void;
+  onOpen: (task: KanbanTask) => void;
+}) {
   const col = columnFor(task.status);
   const tone = columnTone(col);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const act = async (action: "unblock" | "archive" | "complete", confirmMsg?: string) => {
+  const act = async (
+    e: React.MouseEvent,
+    action: "unblock" | "archive" | "complete",
+    confirmMsg?: string,
+  ) => {
+    e.stopPropagation();
     if (confirmMsg && !window.confirm(confirmMsg)) return;
     setBusy(action);
     try {
@@ -123,10 +215,14 @@ function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) 
 
   return (
     <div
-      className="panel p-3.5"
+      className="panel p-3.5 cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"
       style={{
         borderLeft: `2px solid color-mix(in srgb, ${toneVar(tone)} 55%, transparent)`,
       }}
+      onClick={() => onOpen(task)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter") onOpen(task); }}
     >
       <p className="text-[13px] text-[var(--text)] leading-snug line-clamp-3">{task.title}</p>
       <div className="flex items-center gap-2 flex-wrap mt-2.5">
@@ -148,7 +244,7 @@ function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) 
           {showUnblock && (
             <button
               type="button"
-              onClick={() => act("unblock")}
+              onClick={(e) => act(e, "unblock")}
               disabled={busy !== null}
               className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
             >
@@ -158,7 +254,7 @@ function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) 
           {showComplete && (
             <button
               type="button"
-              onClick={() => act("complete", `Mark "${task.title}" as done?`)}
+              onClick={(e) => act(e, "complete", `Mark "${task.title}" as done?`)}
               disabled={busy !== null}
               className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
             >
@@ -168,7 +264,7 @@ function TaskCard({ task, onActed }: { task: KanbanTask; onActed: () => void }) 
           {showArchive && (
             <button
               type="button"
-              onClick={() => act("archive", `Archive "${task.title}"? It will be removed from this board.`)}
+              onClick={(e) => act(e, "archive", `Archive "${task.title}"? It will be removed from this board.`)}
               disabled={busy !== null}
               className="btn-ghost inline-flex items-center gap-1 px-2 py-1 text-[11px] disabled:opacity-40"
             >
@@ -188,12 +284,14 @@ function KanbanBoard({
   lastSync,
   stale,
   onActed,
+  onOpen,
 }: {
   tasks: KanbanTask[];
   total: number;
   lastSync: string | null;
   stale: boolean;
   onActed: () => void;
+  onOpen: (task: KanbanTask) => void;
 }) {
   const groups: Record<string, KanbanTask[]> = {};
   for (const t of tasks) {
@@ -237,7 +335,7 @@ function KanbanBoard({
                   {items.length === 0 ? (
                     <p className="text-[var(--text-4)] text-[12px] text-center py-4">—</p>
                   ) : (
-                    items.map((t) => <TaskCard key={t.id} task={t} onActed={onActed} />)
+                    items.map((t) => <TaskCard key={t.id} task={t} onActed={onActed} onOpen={onOpen} />)
                   )}
                 </div>
               </div>
@@ -261,6 +359,7 @@ export default function TasksPage() {
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [historyStale, setHistoryStale] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const lastTasks = useRef<KanbanTask[]>([]);
 
   const load = useCallback(async () => {
@@ -307,6 +406,7 @@ export default function TasksPage() {
   const blocked = countFor("blocked");
   const review = countFor("review");
   const done = countFor("done");
+  const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null;
 
   return (
     <>
@@ -372,10 +472,20 @@ export default function TasksPage() {
               </div>
             </>
           ) : (
-            <KanbanBoard tasks={tasks} total={taskTotal} lastSync={taskSync} stale={historyStale} onActed={load} />
+            <KanbanBoard
+              tasks={tasks}
+              total={taskTotal}
+              lastSync={taskSync}
+              stale={historyStale}
+              onActed={load}
+              onOpen={(t) => setSelectedTaskId(t.id)}
+            />
           )}
         </section>
       </div>
+      {selectedTask && (
+        <TaskDetailModal task={selectedTask} onClose={() => setSelectedTaskId(null)} />
+      )}
     </>
   );
 }
