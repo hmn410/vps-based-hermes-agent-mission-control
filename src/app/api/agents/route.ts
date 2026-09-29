@@ -9,7 +9,7 @@ const DEFAULT_AGENTS = [
   {
     id: "max",
     name: "HERMES",
-    emoji: "\uD83D\uDC3A",
+    emoji: "\uD83E\uDEBD",
     role: "Chief of Staff \u00B7 Orchestrator",
     status: "online",
     tasksCompleted: 0,
@@ -19,8 +19,8 @@ const DEFAULT_AGENTS = [
   {
     id: "sage",
     name: "INTEGGY",
-    emoji: "\uD83C\uDFAB",
-    role: "Ticket Ops \u00B7 Client Queue Triage",
+    emoji: "\uD83C\uDFA7",
+    role: "Ticket Ops \u00B7 Integris Support Queue",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,
@@ -29,7 +29,7 @@ const DEFAULT_AGENTS = [
   {
     id: "knox",
     name: "JBT",
-    emoji: "\uD83D\uDD27",
+    emoji: "\uD83D\uDC77",
     role: "Build Ops \u00B7 JoshBuilds.Tech Status",
     status: "idle",
     tasksCompleted: 0,
@@ -39,8 +39,8 @@ const DEFAULT_AGENTS = [
   {
     id: "nova",
     name: "JOSH",
-    emoji: "\uD83C\uDFE0",
-    role: "Home Base \u00B7 Personal Chief of Staff",
+    emoji: "\uD83C\uDFE1",
+    role: "Home Base \u00B7 Personal Assistant",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,

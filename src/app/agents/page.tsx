@@ -33,10 +33,10 @@ const statusConfig: Record<string, { color: string; dot: string; label: string; 
 };
 
 const roleColors: Record<string, string> = {
-  max: "from-amber-500/20 to-amber-600/5 border-amber-500/20",
+  max: "from-slate-400/20 to-slate-500/5 border-slate-400/20",
   sage: "from-sky-500/20 to-sky-600/5 border-sky-500/20",
-  knox: "from-emerald-500/20 to-emerald-600/5 border-emerald-500/20",
-  nova: "from-purple-500/20 to-purple-600/5 border-purple-500/20",
+  knox: "from-orange-500/20 to-orange-600/5 border-orange-500/20",
+  nova: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
   pixel: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
 };
 
@@ -436,7 +436,7 @@ export default function AgentsPage() {
               <button onClick={() => setChatAgent(agents.find(a => a.id === "max")!)}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] transition-colors"
                 style={{ color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 28%, transparent)" }}>
-                🐺 Chat with HERMES
+                🪽 Chat with HERMES
               </button>
             )}
           </div>
@@ -473,7 +473,7 @@ export default function AgentsPage() {
             <div className="flex flex-col items-center gap-2">
               <div className="flex items-center gap-2.5 rounded-[var(--r-md)] px-4 py-2.5"
                 style={{ background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 24%, transparent)" }}>
-                <span className="text-xl">🐺</span>
+                <span className="text-xl">🪽</span>
                 <div>
                   <div className="text-[13px] font-semibold text-[var(--text)]">HERMES</div>
                   <div className="text-[10px] text-[var(--text-3)]">Chief of Staff · Orchestrator</div>
