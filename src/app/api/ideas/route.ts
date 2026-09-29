@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { kanbanCreateTask, kanbanTaskAction, kanbanDashboardConfigured } from "@/lib/kanban-dashboard-client";
 
 export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get("type");
@@ -30,11 +31,52 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(idea);
 }
 
+// Statuses that push (or update) a linked kanban task so approved/active
+// ideas surface on the board — and in the chief-of-staff brief, which reads
+// straight off the board. Statuses not listed here don't touch kanban.
+const KANBAN_SYNC_STATUS: Record<string, "create" | "complete" | "archive" | "ready"> = {
+  approved: "create",
+  "in-progress": "ready",
+  done: "complete",
+  rejected: "archive",
+};
+
 export async function PUT(req: NextRequest) {
   const { id, ...updates } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   try {
+    const existing = await prisma.idea.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    // Sync to kanban on a real status change, best-effort — an idea update
+    // must never fail just because the kanban bridge is briefly unreachable.
+    if (
+      typeof updates.status === "string" &&
+      updates.status !== existing.status &&
+      kanbanDashboardConfigured()
+    ) {
+      const action = KANBAN_SYNC_STATUS[updates.status];
+      try {
+        if (action === "create" && !existing.kanbanTaskId) {
+          const created = await kanbanCreateTask({
+            title: existing.title,
+            body: [
+              existing.description || "",
+              "",
+              "---",
+              "Approved idea from the Hermy HQ Ideas board.",
+            ].join("\n"),
+          });
+          if (created?.task?.id) updates.kanbanTaskId = created.task.id;
+        } else if (action && action !== "create" && existing.kanbanTaskId) {
+          await kanbanTaskAction(existing.kanbanTaskId, action);
+        }
+      } catch (err) {
+        console.error("kanban sync failed for idea", id, err);
+      }
+    }
+
     const idea = await prisma.idea.update({
       where: { id },
       data: updates,

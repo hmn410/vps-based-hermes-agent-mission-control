@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Clock, Lightbulb, Check, X, Pencil, Trash2, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Plus, Clock, Lightbulb, Check, X, Pencil, Trash2, RotateCcw, CheckCircle2, Play } from "lucide-react";
 import { Panel, Pill, Button, Skeleton, EmptyState, rise } from "@/components/ui/kit";
 
 interface Idea {
@@ -27,7 +27,6 @@ const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
   done:          { label: "Done",        tone: "up" },
   rejected:      { label: "Rejected",    tone: "down" },
 };
-
 const CATEGORY_CONFIG: Record<string, { label: string }> = {
   build:      { label: "Build" },
   content:    { label: "Content" },
@@ -66,6 +65,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   const date = idea.createdAt || idea.timestamp || "";
   const isDead = status === "rejected" || status === "done";
   const isApproved = status === "approved";
+  const isInProgress = status === "in-progress";
 
   const updateIdea = async (updates: Partial<Idea>) => {
     setBusy(true);
@@ -208,7 +208,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
       {/* Actions */}
       {!isRejecting && (
         <div className="flex items-center gap-2 flex-wrap">
-          {!isDead && !isApproved && (
+          {!isDead && !isApproved && !isInProgress && (
             <>
               <button
                 onClick={() => updateIdea({ status: "approved" })}
@@ -238,6 +238,15 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
                 Approved
               </span>
               <button
+                onClick={() => updateIdea({ status: "in-progress" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                style={{ color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 24%, transparent)" }}
+              >
+                <Play className="w-3 h-3" />
+                Start
+              </button>
+              <button
                 onClick={() => updateIdea({ status: "done" })}
                 disabled={busy}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
@@ -253,6 +262,32 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
               >
                 <RotateCcw className="w-3 h-3" />
                 Revert
+              </button>
+            </>
+          )}
+
+          {isInProgress && (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--accent)" }}>
+                <Play className="w-3 h-3" />
+                In Progress
+              </span>
+              <button
+                onClick={() => updateIdea({ status: "done" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                Mark Done
+              </button>
+              <button
+                onClick={() => updateIdea({ status: "approved" })}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Back to Approved
               </button>
             </>
           )}

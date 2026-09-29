@@ -75,6 +75,27 @@ async function dashboardFetch<T>(path: string, init: { method?: string; body?: u
 
 export const kanbanDashboardConfigured = configured;
 
+// Creates a real kanban task from the website (ideas board etc.), landing in
+// triage by default so a routing profile can flesh it out before any worker
+// picks it up — approving an idea should make it visible on the board, not
+// silently kick off unattended agent work.
+export async function kanbanCreateTask({
+  title,
+  body,
+  assignee = "default",
+  triage = true,
+}: {
+  title: string;
+  body?: string | null;
+  assignee?: string;
+  triage?: boolean;
+}): Promise<{ task?: { id: string } }> {
+  return dashboardFetch(`/api/plugins/kanban/tasks`, {
+    method: "POST",
+    body: { title: title.slice(0, 200), body: body || null, assignee, triage },
+  });
+}
+
 // Task lifecycle actions surfaced as buttons on the /tasks page so the
 // common "clear this up" moves don't require opening the full kanban board.
 export type KanbanTaskAction = "unblock" | "archive" | "complete" | "ready";
