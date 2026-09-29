@@ -70,11 +70,16 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   const updateIdea = async (updates: Partial<Idea>) => {
     setBusy(true);
     try {
-      await fetch("/api/ideas", {
+      const res = await fetch("/api/ideas", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: idea.id, ...updates }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        window.alert(body.error || "Couldn't update this idea.");
+        return;
+      }
       onUpdate();
     } finally {
       setBusy(false);
