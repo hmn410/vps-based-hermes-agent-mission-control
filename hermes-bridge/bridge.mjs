@@ -226,6 +226,38 @@ function readKanbanEvents(limit = 150) {
   }
 }
 const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
+
+// ── Agent status derived from REAL kanban task state ──────────────────
+// Fixes the Agents tab showing agents stuck on "idle" for work they're
+// actually doing: previously "working" was only ever set client-side by
+// the chat modal's POST, so delegated tasks (Max spawning a child task via
+// kanban_create) never touched AgentState at all, and status never reset
+// if the modal/tab was closed. This instead reflects whatever the kanban
+// board actually shows, every mirror tick (independent of the browser).
+const ASSIGNEE_TO_AGENT = { default: "max", ops: "sage", builder: "knox", personal: "nova", seocontent: "pixel" };
+const ACTIVE_STATUSES = new Set(["triage", "todo", "ready", "running", "review", "blocked"]);
+async function syncAgentStates(rows) {
+  const activeByAssignee = new Map();
+  for (const t of rows) {
+    if (!ACTIVE_STATUSES.has(t.status)) continue;
+    const agentId = ASSIGNEE_TO_AGENT[t.assignee];
+    if (!agentId) continue;
+    if (!activeByAssignee.has(agentId)) activeByAssignee.set(agentId, t.title);
+  }
+  for (const agentId of Object.values(ASSIGNEE_TO_AGENT)) {
+    const currentTask = activeByAssignee.get(agentId) || null;
+    const status = currentTask ? "working" : "idle";
+    await q(
+      `INSERT INTO "AgentState" (id, name, status, "currentTask", "lastActive", "updatedAt")
+       VALUES ($1,$1,$2,$3, CASE WHEN $2='working' THEN now() ELSE NULL END, now())
+       ON CONFLICT (id) DO UPDATE SET status=$2, "currentTask"=$3,
+         "lastActive"=CASE WHEN $2='working' THEN now() ELSE "AgentState"."lastActive" END,
+         "updatedAt"=now()`,
+      [agentId, status, currentTask]
+    );
+  }
+}
+
 async function mirrorKanban() {
   let rows;
   try { rows = await readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
@@ -234,6 +266,7 @@ async function mirrorKanban() {
     taskCount: rows.length,
     confirmedEmpty: rows.length === 0,
   });
+  try { await syncAgentStates(rows); } catch (e) { log("syncAgentStates err", e.message); }
   let events = [];
   try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); }
   const eventsByTask = new Map();

@@ -92,7 +92,11 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Reflect "working" on the Agents tab immediately.
+    // Optimistic "working" flip for a snappy UI — the bridge's mirror tick
+    // (every ~3s) reconciles this against REAL kanban task state for every
+    // profile regardless of source (this chat OR a Max-delegated task), so
+    // it's safe even if this call races with another task for the same
+    // agent; the bridge is the single source of truth for idle transitions.
     await prisma.agentState.upsert({
       where: { id: agentId },
       update: { status: 'working', currentTask: row.title, lastActive: new Date() },
