@@ -74,7 +74,7 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
   const empty = !data || !data.generatedAt || !data.summary;
 
   return (
-    <Panel className={`flex h-full flex-col p-6 ${className}`}>
+    <Panel className={`flex flex-col p-6 ${className}`}>
       <div className="flex items-center justify-between gap-4 mb-3 shrink-0">
         <div className="flex items-center gap-2.5">
           <Sunrise className="w-4 h-4 text-[var(--accent)]" />
@@ -98,21 +98,18 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
       </div>
 
       {empty ? (
-        <div className="flex flex-1 items-center justify-center py-6 text-center">
-          <div>
-            <p className="text-[14px] text-[var(--text-2)]">
-              {generating ? "Hermes is writing your brief… (~1 min)" : loaded ? "No brief yet." : "Loading…"}
+        <div className="py-6 text-center">
+          <p className="text-[14px] text-[var(--text-2)]">
+            {generating ? "Hermes is writing your brief… (~1 min)" : loaded ? "No brief yet." : "Loading…"}
+          </p>
+          {!generating && loaded && (
+            <p className="mt-1 text-[12.5px] text-[var(--text-3)]">
+              It auto-generates each morning — or hit Generate to get one now.
             </p>
-            {!generating && loaded && (
-              <p className="mt-1 text-[12.5px] text-[var(--text-3)]">
-                It auto-generates each morning — or hit Generate to get one now.
-              </p>
-            )}
-          </div>
+          )}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div className="min-h-full flex flex-col justify-center">
+        <div className="max-h-[520px] overflow-y-auto pr-1">
           {data!.greeting && (
             <p className="text-[15px] font-medium text-[var(--text)] mb-1.5">{data!.greeting}</p>
           )}
@@ -138,7 +135,6 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
               ))}
             </div>
           )}
-          </div>
         </div>
       )}
     </Panel>

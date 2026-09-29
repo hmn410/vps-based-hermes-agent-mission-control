@@ -46,7 +46,7 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-stretch">
-        <HermesBriefing className="xl:col-span-2 min-h-[420px]" />
+        <HermesBriefing className="xl:col-span-2 self-start" />
         <CalendarPanel className="min-h-[420px]" />
       </section>
 
