@@ -551,7 +551,7 @@ export default function LongFormPage() {
           {/* Tweak request panel */}
           {tweakOpen && (
             <div className="mt-3 bg-[color-mix(in_srgb,var(--warn)_6%,transparent)] border border-[color-mix(in_srgb,var(--warn)_22%,transparent)] rounded-[var(--r-md)] p-3">
-              <p className="eyebrow mb-2" style={{ color: "var(--warn)" }}>Send tweak to Nova</p>
+              <p className="eyebrow mb-2" style={{ color: "var(--warn)" }}>Send tweak to JOSH</p>
               <div className="flex gap-2">
                 <input
                   type="text"

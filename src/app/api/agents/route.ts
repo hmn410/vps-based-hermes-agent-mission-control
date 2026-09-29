@@ -8,7 +8,7 @@ export const revalidate = 0;
 const DEFAULT_AGENTS = [
   {
     id: "max",
-    name: "Max",
+    name: "HERMES",
     emoji: "\uD83D\uDC3A",
     role: "Chief of Staff \u00B7 Orchestrator",
     status: "online",
@@ -18,7 +18,7 @@ const DEFAULT_AGENTS = [
   },
   {
     id: "sage",
-    name: "Sage",
+    name: "INTEGGY",
     emoji: "\uD83C\uDFAB",
     role: "Ticket Ops \u00B7 Client Queue Triage",
     status: "idle",
@@ -28,7 +28,7 @@ const DEFAULT_AGENTS = [
   },
   {
     id: "knox",
-    name: "Knox",
+    name: "JBT",
     emoji: "\uD83D\uDD27",
     role: "Build Ops \u00B7 JoshBuilds.Tech Status",
     status: "idle",
@@ -38,7 +38,7 @@ const DEFAULT_AGENTS = [
   },
   {
     id: "nova",
-    name: "Nova",
+    name: "JOSH",
     emoji: "\uD83C\uDFE0",
     role: "Home Base \u00B7 Personal Chief of Staff",
     status: "idle",

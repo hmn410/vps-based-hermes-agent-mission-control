@@ -795,7 +795,7 @@ export default function XContentPage() {
             placeholder="Request content... e.g. 'quote retweet my last tweet about bookmarks with an update'"
             className="w-full bg-[var(--surface-1)] border border-[var(--line)] rounded-[var(--r-md)] px-4 py-3 text-[13px] text-[var(--text)] placeholder-[var(--text-3)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
           />
-          <span className="absolute right-3 top-3.5 text-[10px] text-[var(--text-3)]">Sage</span>
+          <span className="absolute right-3 top-3.5 text-[10px] text-[var(--text-3)]">INTEGGY</span>
         </div>
         <button
           onClick={handleContentRequest}

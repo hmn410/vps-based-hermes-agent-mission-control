@@ -436,7 +436,7 @@ export default function AgentsPage() {
               <button onClick={() => setChatAgent(agents.find(a => a.id === "max")!)}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] transition-colors"
                 style={{ color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 28%, transparent)" }}>
-                🐺 Chat with Max
+                🐺 Chat with HERMES
               </button>
             )}
           </div>
@@ -475,7 +475,7 @@ export default function AgentsPage() {
                 style={{ background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 24%, transparent)" }}>
                 <span className="text-xl">🐺</span>
                 <div>
-                  <div className="text-[13px] font-semibold text-[var(--text)]">Max</div>
+                  <div className="text-[13px] font-semibold text-[var(--text)]">HERMES</div>
                   <div className="text-[10px] text-[var(--text-3)]">Chief of Staff · Orchestrator</div>
                 </div>
               </div>

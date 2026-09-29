@@ -297,7 +297,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleReject()}
-            placeholder="Why reject? (helps Sage learn)"
+            placeholder="Why reject? (helps INTEGGY learn)"
             className="flex-1 bg-[var(--surface-2)] border rounded-full px-3 py-2 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none transition-colors"
             style={{ borderColor: "color-mix(in srgb, var(--down) 28%, transparent)" }}
             autoFocus
