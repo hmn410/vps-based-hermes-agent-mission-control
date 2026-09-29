@@ -30,6 +30,17 @@ const DESK_LAYOUT = [
   { agentId: "pixel", label: "Content Desk",  zone: "team" },
 ];
 
+// Which real Hermes profile each persona's kanban tasks are assigned to —
+// kept in sync with src/app/agents/page.tsx's PROFILE_MAP and
+// hermes-bridge/bridge.mjs's ASSIGNEE_TO_AGENT map.
+const PROFILE_MAP: Record<string, string> = {
+  max: "default",
+  sage: "ops",
+  knox: "builder",
+  nova: "personal",
+  pixel: "seocontent",
+};
+
 // ── Status → visual config ────────────────────────────────
 const STATUS: Record<string, { glow: string; dot: string; bg: string; ring?: string }> = {
   working:   { glow: "shadow-[0_0_24px_6px_rgba(56,189,248,0.45)]",  dot: "bg-sky-400",     bg: "bg-sky-900/30 border-sky-500/40",     ring: "rgba(56,189,248,0.5)" },
@@ -318,6 +329,14 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
         </div>
         <div className={`text-[10px] uppercase tracking-wider mt-0.5 ${isOffline ? "text-neutral-700" : "text-neutral-500"}`}>{label}</div>
         {agent?.role && <div className="text-[10px] text-neutral-600 truncate max-w-[140px] mx-auto">{agent.role}</div>}
+        {agent?.id && (
+          <div
+            className="text-[8px] font-mono uppercase tracking-wide mt-1 inline-block px-1.5 py-0.5 rounded border border-neutral-700/60 bg-neutral-800/50 text-neutral-500"
+            title="Hermes profile this desk's tasks run on"
+          >
+            {PROFILE_MAP[agent.id] ?? "?"}
+          </div>
+        )}
       </div>
     </div>
   );

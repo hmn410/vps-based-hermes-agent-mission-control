@@ -40,6 +40,18 @@ const roleColors: Record<string, string> = {
   pixel: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
 };
 
+// Which real Hermes profile each persona's kanban tasks are assigned to —
+// shown on-card so it's clear which profile's memory/skills a chat is
+// actually running on (kept in sync with hermes-bridge/bridge.mjs's
+// ASSIGNEE_TO_AGENT map and the assignee list in api/agent-chat/route.ts).
+const PROFILE_MAP: Record<string, string> = {
+  max: "default",
+  sage: "ops",
+  knox: "builder",
+  nova: "personal",
+  pixel: "seocontent",
+};
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -73,6 +85,13 @@ function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: 
               </span>
               <h3 className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</h3>
               <span className="text-[10px] font-medium" style={{ color: status.color }}>{status.label}</span>
+              <span
+                className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wide"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text-4)" }}
+                title="Hermes profile this agent's tasks run on"
+              >
+                {PROFILE_MAP[agent.id] ?? "?"}
+              </span>
             </div>
             <p className="text-[12px] text-[var(--text-3)] mt-1">{agent.role}</p>
 
