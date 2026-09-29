@@ -346,6 +346,7 @@ async function runRequest(r) {
           "",
           "---",
           "This is a direct question/request from a human via the Hermy HQ dashboard chat — not an internal handoff task. When you finish, call kanban_complete with the FULL, complete answer text in the `summary` field (not a short 1-3 sentence handoff — write out the entire response the human should read, as long as it needs to be).",
+          "Also, right before calling kanban_complete, notify Josh directly so he doesn't have to keep checking back: run `hermes send -t photon \"<your one-line summary>\"` in the terminal (use the actual reply's headline, not a placeholder).",
         ].join("\n"),
         assignee: r.assignee || "default", // route to the right Hermes profile
         triage: false,                      // skip triage hop — dispatch straight to that
