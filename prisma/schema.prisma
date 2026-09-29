@@ -454,6 +454,7 @@ model AgentRequest {
   kind          String    @default("oneshot") // "oneshot" | "kanban" | "chat"
   title         String
   prompt        String?
+  assignee      String    @default("default") // which Hermes profile/worker should run this (kanban assignee)
   sideEffecting Boolean   @default(false)
   status        String    @default("queued")  // queued | awaiting_approval | approved | running | done | failed | rejected
   result        String?

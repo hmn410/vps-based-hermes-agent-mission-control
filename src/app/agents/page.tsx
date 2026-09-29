@@ -119,13 +119,96 @@ function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: 
 }
 
 // ── Live Agent Chat ───────────────────────────────────────
+const CHAT_STORAGE_PREFIX = "hq-agent-chat:";
+type ChatMsg = { role: "user" | "assistant"; content: string };
+
+function loadStoredChat(agentId: string): { msgs: ChatMsg[]; pendingRequestId?: string; pendingSince?: number } {
+  if (typeof window === "undefined") return { msgs: [] };
+  try {
+    const raw = window.localStorage.getItem(CHAT_STORAGE_PREFIX + agentId);
+    return raw ? JSON.parse(raw) : { msgs: [] };
+  } catch {
+    return { msgs: [] };
+  }
+}
+
+function saveStoredChat(agentId: string, data: { msgs: ChatMsg[]; pendingRequestId?: string; pendingSince?: number }) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CHAT_STORAGE_PREFIX + agentId, JSON.stringify(data));
+  } catch {}
+}
+
+// Flips the agent's status back to idle and logs the exchange once a chat
+// request resolves — without this the Agents tab leaves the card stuck on
+// "Working" forever, since only `send()` ever marked it working.
+async function markAgentIdle(agentId: string, action: string) {
+  try {
+    await fetch("/api/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId, status: "idle", currentTask: null, action }),
+    });
+  } catch {}
+}
+
 function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   const [input, setInput] = useState("");
-  const [msgs, setMsgs] = useState<{ role: "user"|"assistant"; content: string }[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [msgs, setMsgs] = useState<ChatMsg[]>(() => loadStoredChat(agent.id).msgs);
+  const [loading, setLoading] = useState(() => Boolean(loadStoredChat(agent.id).pendingRequestId));
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  // Persist every message change so navigating away and back keeps history.
+  useEffect(() => {
+    const stored = loadStoredChat(agent.id);
+    saveStoredChat(agent.id, { ...stored, msgs });
+  }, [agent.id, msgs]);
+
+  const poll = useCallback((requestId: string, started: number) => {
+    const step = async (): Promise<void> => {
+      if (Date.now() - started > 4 * 60 * 1000) {
+        setMsgs((cur) => [...cur, { role: "assistant", content: "Still working on it — this is taking longer than usual. Check the Hermes tab for status." }]);
+        setLoading(false);
+        saveStoredChat(agent.id, { msgs: loadStoredChat(agent.id).msgs });
+        await markAgentIdle(agent.id, "Chat timed out waiting for reply");
+        return;
+      }
+      const pr = await fetch(`/api/agent-chat?id=${requestId}`);
+      const pd = await pr.json() as { status: string; result?: string; error?: string };
+      if (pd.status === "done") {
+        setMsgs((cur) => {
+          const next = [...cur, { role: "assistant" as const, content: pd.result || "(no reply)" }];
+          saveStoredChat(agent.id, { msgs: next });
+          return next;
+        });
+        setLoading(false);
+        await markAgentIdle(agent.id, "Replied in chat");
+      } else if (pd.status === "failed" || pd.status === "rejected") {
+        setMsgs((cur) => {
+          const next = [...cur, { role: "assistant" as const, content: pd.error || "That request failed. Try again." }];
+          saveStoredChat(agent.id, { msgs: next });
+          return next;
+        });
+        setLoading(false);
+        await markAgentIdle(agent.id, "Chat request failed");
+      } else {
+        setTimeout(step, 2500);
+      }
+    };
+    step();
+  }, [agent.id]);
+
+  // Resume polling a request still in flight if the modal was closed/reopened.
+  useEffect(() => {
+    const stored = loadStoredChat(agent.id);
+    if (stored.pendingRequestId && stored.pendingSince) {
+      setLoading(true);
+      poll(stored.pendingRequestId, stored.pendingSince);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send() {
     const text = input.trim();
@@ -140,12 +223,26 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentId: agent.id, message: text, history: msgs }),
       });
-      const d = await r.json() as { reply: string };
-      setMsgs([...newMsgs, { role: "assistant", content: d.reply }]);
+      const d = await r.json() as { requestId?: string; status?: string; error?: string };
+      if (!r.ok || !d.requestId) {
+        setMsgs([...newMsgs, { role: "assistant", content: d.error || "Sorry, something went wrong. Try again." }]);
+        setLoading(false);
+        return;
+      }
+      if (d.status === "awaiting_approval") {
+        setMsgs([...newMsgs, { role: "assistant", content: "This request needs your approval before I can work on it — check the approval inbox on the Hermes tab." }]);
+        setLoading(false);
+        return;
+      }
+      // Real kanban task queued — poll for the worker's reply. Persist the
+      // pending request id so the modal can resume polling if closed.
+      const started = Date.now();
+      saveStoredChat(agent.id, { msgs: newMsgs, pendingRequestId: d.requestId, pendingSince: started });
+      poll(d.requestId, started);
     } catch {
       setMsgs([...newMsgs, { role: "assistant", content: "Sorry, something went wrong. Try again." }]);
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const agentColor = roleColors[agent.id]?.split(" ")[0]?.replace("from-","text-")?.replace("/20","") || "text-[var(--text-3)]";
@@ -183,7 +280,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
           {loading && (
             <div className="flex justify-start">
               <div className="rounded-[var(--r-md)] px-3.5 py-2" style={{ background: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                <span className="text-[var(--text-3)] text-[13px]">{agent.emoji} thinking…</span>
+                <span className="text-[var(--text-3)] text-[13px]">{agent.emoji} working on it…</span>
               </div>
             </div>
           )}

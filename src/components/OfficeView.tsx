@@ -23,11 +23,11 @@ interface Agent {
 
 // ── Desk layout ───────────────────────────────────────────
 const DESK_LAYOUT = [
-  { agentId: "max",   label: "CEO Corner",   zone: "ceo" },
-  { agentId: "sage",  label: "Research Bay", zone: "team" },
-  { agentId: "knox",  label: "Ops Desk",     zone: "team" },
-  { agentId: "nova",  label: "Creative Hub", zone: "team" },
-  { agentId: "pixel", label: "Lab",          zone: "team" },
+  { agentId: "max",   label: "CEO Corner",    zone: "ceo" },
+  { agentId: "sage",  label: "Ticket Queue",  zone: "team" },
+  { agentId: "knox",  label: "Build Desk",    zone: "team" },
+  { agentId: "nova",  label: "Home Base",     zone: "team" },
+  { agentId: "pixel", label: "Content Desk",  zone: "team" },
 ];
 
 // ── Status → visual config ────────────────────────────────
@@ -290,23 +290,13 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
             }
           >
             {/* Vertical bob wrapper */}
-            <div
-              style={
-                !isOffline && !isWorking
-                  ? { animation: `agent-bob ${walk.bobDur} ${walk.bobDelay} infinite ease-in-out` }
-                  : undefined
-              }
-            >
+            <div style={
+              !isOffline && !isWorking
+                ? { animation: `agent-bob ${walk.bobDur} ${walk.bobDelay} infinite ease-in-out` }
+                : undefined
+            }>
               <PixelSprite agentId={agent?.id ?? ""} size={spriteSize} />
             </div>
-          </div>
-
-          {/* Name + status dot */}
-          <div className="flex items-center gap-1 mt-1">
-            <div className={`w-1.5 h-1.5 rounded-full ${colors.dot} ${isWorking ? "animate-pulse" : ""}`} />
-            <span className={`text-[10px] font-bold tracking-wider uppercase ${isOffline ? "text-neutral-600" : "text-white/80"}`}>
-              {agent?.name ?? "Empty"}
-            </span>
           </div>
         </div>
 
@@ -318,10 +308,16 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
         )}
       </div>
 
-      {/* Label */}
+      {/* Label — name lives here, clear of the monitor/sprite above */}
       <div className="text-center">
-        <div className={`text-[10px] uppercase tracking-wider ${isOffline ? "text-neutral-700" : "text-neutral-500"}`}>{label}</div>
-        {agent?.role && <div className="text-[10px] text-neutral-600 truncate max-w-[140px]">{agent.role}</div>}
+        <div className="flex items-center justify-center gap-1.5">
+          <div className={`w-1.5 h-1.5 rounded-full ${colors.dot} ${isWorking ? "animate-pulse" : ""}`} />
+          <span className={`text-[11px] font-bold tracking-wider uppercase ${isOffline ? "text-neutral-600" : "text-white/80"}`}>
+            {agent?.name ?? "Empty"}
+          </span>
+        </div>
+        <div className={`text-[10px] uppercase tracking-wider mt-0.5 ${isOffline ? "text-neutral-700" : "text-neutral-500"}`}>{label}</div>
+        {agent?.role && <div className="text-[10px] text-neutral-600 truncate max-w-[140px] mx-auto">{agent.role}</div>}
       </div>
     </div>
   );

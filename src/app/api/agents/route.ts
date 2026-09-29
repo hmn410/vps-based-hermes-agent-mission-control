@@ -19,8 +19,8 @@ const DEFAULT_AGENTS = [
   {
     id: "sage",
     name: "Sage",
-    emoji: "\uD83C\uDF3F",
-    role: "X Content Specialist \u00B7 Trend Scout",
+    emoji: "\uD83C\uDFAB",
+    role: "Ticket Ops \u00B7 Client Queue Triage",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,
@@ -29,8 +29,8 @@ const DEFAULT_AGENTS = [
   {
     id: "knox",
     name: "Knox",
-    emoji: "\uD83D\uDD10",
-    role: "Trading Operations \u00B7 Bot Monitor",
+    emoji: "\uD83D\uDD27",
+    role: "Build Ops \u00B7 JoshBuilds.Tech Status",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,
@@ -39,8 +39,8 @@ const DEFAULT_AGENTS = [
   {
     id: "nova",
     name: "Nova",
-    emoji: "\u2B50",
-    role: "YouTube Strategy \u00B7 Content Research",
+    emoji: "\uD83C\uDFE0",
+    role: "Home Base \u00B7 Personal Chief of Staff",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,
@@ -49,8 +49,8 @@ const DEFAULT_AGENTS = [
   {
     id: "pixel",
     name: "Pixel",
-    emoji: "\uD83C\uDFA8",
-    role: "Web App Specialist \u00B7 Product Ideas",
+    emoji: "\u270D\uFE0F",
+    role: "Content \u00B7 JoshBuilds.Tech Marketing",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,

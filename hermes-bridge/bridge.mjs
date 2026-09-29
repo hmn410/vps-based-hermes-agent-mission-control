@@ -347,8 +347,8 @@ async function runRequest(r) {
           "---",
           "This is a direct question/request from a human via the Hermy HQ dashboard chat — not an internal handoff task. When you finish, call kanban_complete with the FULL, complete answer text in the `summary` field (not a short 1-3 sentence handoff — write out the entire response the human should read, as long as it needs to be).",
         ].join("\n"),
-        assignee: "default", // skip triage hop — dispatch straight to the default
-        triage: false,       // worker, exactly like Telegram/CLI-originated tasks
+        assignee: r.assignee || "default", // route to the right Hermes profile
+        triage: false,                      // skip triage hop — dispatch straight to that
       });
       // Hand off to the kanban lifecycle — leave status as 'running' so it
       // reads as "in flight" on the website; syncKanbanLinkedRequests()
