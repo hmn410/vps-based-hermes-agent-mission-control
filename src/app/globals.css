@@ -139,17 +139,17 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.08);
-  border-radius: 99px;
+  background: rgba(0, 255, 65, 0.15);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.14);
+  background: rgba(0, 255, 65, 0.28);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 255, 65, 0.25);
 }
 
 /* Force LTR everywhere */
@@ -163,39 +163,43 @@ textarea, input {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PREMIUM DESIGN SYSTEM  ·  Hermy HQ  ·  "Calm Luxury" (Linear × Stripe)
-   Restraint + space. Monochrome surface ladder, hairline borders,
-   tabular/mono numerals, ONE desaturated accent, semantic-only
-   status color, sub-300ms ease-out motion. Elevation by light,
-   never by shadow (overlays are the only exception).
+   PREMIUM DESIGN SYSTEM  ·  Hermy HQ  ·  "Terminal Ops"
+   Restyled to match joshbuilds.tech: near-black surfaces, sharp
+   hairline borders, ONE neon-green terminal accent with glow,
+   VT323 display type + Share Tech Mono UI type, bracket-style
+   labels. Motion/elevation rules kept from the calm-luxury base.
    ═══════════════════════════════════════════════════════════ */
 :root {
   /* surface ladder — depth via lighter tiers, not shadows */
-  --bg:        #0a0b0d;   /* near-black, never #000 (avoids halation) */
-  --surface-1: #101113;   /* cards */
-  --surface-2: #16181b;   /* raised / hover */
-  --surface-3: #1e2024;   /* modals, highest tier */
+  --bg:        #080808;   /* joshbuilds.tech body bg */
+  --surface-1: #0d0d0d;   /* cards / panel-bg */
+  --surface-2: #111111;   /* raised / hover / surface */
+  --surface-3: #161616;   /* modals, highest tier */
 
   /* hairlines carry structure */
-  --line:        rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.13);
+  --line:        #1c1c1c;
+  --line-strong: #2a2a2a;
 
   /* text ramp (contrast-checked against surfaces) */
-  --text:   #e7e8ea;   /* primary  ~15:1 */
-  --text-2: #a0a3a8;   /* secondary ~7:1 */
-  --text-3: #6b6e74;   /* tertiary — labels/decorative */
-  --text-4: #4b4e54;   /* ghost — hairline captions */
+  --text:   #e8e8e8;   /* primary */
+  --text-2: #b7b7b7;   /* secondary */
+  --text-3: #9a9a9a;   /* tertiary — labels/decorative */
+  --text-4: #6b6e74;   /* ghost — hairline captions */
 
-  /* ONE brand accent (desaturated for dark) + semantic-only status */
-  --accent: #6ea8fe;
-  --up:     #5fd0a0;
-  --down:   #f28b82;
-  --warn:   #f5c451;
+  /* ONE brand accent — terminal green, matching joshbuilds.tech */
+  --accent:      #00FF41;
+  --accent-dim:  #00cc33;
+  --accent-glow: rgba(0, 255, 65, 0.5);
+  --up:     #00FF41;
+  --down:   #FF2244;
+  --warn:   #FFB000;
 
-  /* radius — calm & precise, never toy-soft */
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  /* fonts (--font-display / --font-terminal are set by next/font in layout.tsx) */
+
+  /* radius — sharp/terminal, not toy-soft */
+  --r-sm: 2px;
+  --r-md: 4px;
+  --r-lg: 6px;
 
   /* motion */
   --ease:       cubic-bezier(0.16, 1, 0.3, 1);   /* strong ease-out */
@@ -212,8 +216,8 @@ textarea, input {
   --hq-up: var(--up);
   --hq-down: var(--down);
   --hq-warn: var(--warn);
-  --hq-elev-1: rgba(255, 255, 255, 0.02);
-  --hq-elev-2: rgba(255, 255, 255, 0.04);
+  --hq-elev-1: rgba(0, 255, 65, 0.03);
+  --hq-elev-2: rgba(0, 255, 65, 0.06);
 }
 
 /* tabular/mono numerals — everywhere numbers compare or align */
@@ -224,13 +228,23 @@ textarea, input {
   letter-spacing: -0.01em;
 }
 
-/* section label / eyebrow */
+/* section label / eyebrow — bracketed terminal style like [PRICING.EXE] */
 .eyebrow {
+  font-family: var(--font-terminal), monospace;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--text-3);
+  color: var(--accent-dim);
+}
+
+/* Big display headings — VT323, optionally glowing green like joshbuilds.tech h1s */
+.hq-display {
+  font-family: var(--font-display), monospace;
+  letter-spacing: 0.01em;
+}
+.hq-glow {
+  text-shadow: 0 0 8px var(--accent-glow);
 }
 
 /* Ambient backdrop — a living "place": a slow-drifting aurora under a
@@ -253,10 +267,10 @@ textarea, input {
   position: absolute;
   inset: -20%;
   background:
-    radial-gradient(72% 62% at 8% 6%, rgba(110, 168, 254, 0.14), transparent 70%),
-    radial-gradient(64% 62% at 92% 22%, rgba(95, 208, 160, 0.09), transparent 72%),
-    radial-gradient(70% 62% at 44% 80%, rgba(110, 168, 254, 0.07), transparent 74%),
-    radial-gradient(62% 60% at 98% 98%, rgba(95, 208, 160, 0.06), transparent 74%);
+    radial-gradient(72% 62% at 8% 6%, rgba(0, 255, 65, 0.10), transparent 70%),
+    radial-gradient(64% 62% at 92% 22%, rgba(0, 255, 65, 0.06), transparent 72%),
+    radial-gradient(70% 62% at 44% 80%, rgba(0, 255, 65, 0.05), transparent 74%),
+    radial-gradient(62% 60% at 98% 98%, rgba(0, 255, 65, 0.04), transparent 74%);
   filter: blur(48px);
   animation: aurora-drift 44s ease-in-out infinite;
   will-change: transform;
@@ -266,8 +280,8 @@ textarea, input {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.012) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+    linear-gradient(to right, rgba(0, 255, 65, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 255, 65, 0.025) 1px, transparent 1px);
   background-size: 60px 60px;
   /* fade top→bottom uniformly across the full width — no horizontal seam */
   mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent 80%);
@@ -290,10 +304,10 @@ textarea, input {
 }
 .panel-interactive { cursor: pointer; }
 .panel-interactive:hover {
-  border-color: var(--line-strong);
+  border-color: var(--accent-dim);
   background: var(--surface-2);
   transform: translateY(-2px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px -14px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 rgba(0, 255, 65, 0.05), 0 0 24px -8px var(--accent-glow);
 }
 .panel-interactive:active {
   transform: translateY(-1px) scale(0.995);
@@ -304,27 +318,35 @@ textarea, input {
   background: var(--surface-2);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
-  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
-/* buttons — one filled primary in the whole system, rest are ghost */
+/* buttons — terminal style: bordered box, not filled pill, matching
+   joshbuilds.tech's "START A PROJECT" / "VIEW PRICING" buttons */
 .btn-primary {
-  background: var(--text);
-  color: #0a0b0d;
-  font-weight: 600;
-  border-radius: 9999px;
-  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font-terminal), monospace;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  transition: background 0.12s var(--ease), box-shadow 0.12s var(--ease), transform 0.12s var(--ease);
 }
-.btn-primary:hover { opacity: 0.92; }
+.btn-primary:hover { background: rgba(0, 255, 65, 0.08); box-shadow: 0 0 16px -2px var(--accent-glow); }
 .btn-primary:active { transform: scale(0.97); }
 
 .btn-ghost {
   color: var(--text-2);
+  font-family: var(--font-terminal), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   border: 1px solid var(--line);
-  border-radius: 9999px;
+  border-radius: var(--r-sm);
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease), background 0.15s var(--ease), transform 0.12s var(--ease);
 }
-.btn-ghost:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-2); }
+.btn-ghost:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--surface-2); }
 .btn-ghost:active { transform: scale(0.97); }
 
 /* designed focus ring (not the UA default) */

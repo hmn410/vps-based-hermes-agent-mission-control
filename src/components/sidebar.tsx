@@ -70,10 +70,10 @@ export function Sidebar() {
 
   const Logo = () => (
     <div className="flex items-center gap-2.5">
-      <div className="w-8 h-8 rounded-[10px] bg-[var(--text)] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
-        <span className="text-[#0a0b0d] font-bold text-[13px] tracking-tight">H</span>
+      <div className="w-8 h-8 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--surface-1)] flex items-center justify-center">
+        <span className="text-[var(--accent)] font-mono font-bold text-[13px] tracking-tight">&gt;_</span>
       </div>
-      <span className="font-semibold text-[var(--text)] tracking-[-0.01em] text-[15px]">Hermy HQ</span>
+      <span className="font-mono text-[var(--text)] tracking-[-0.01em] text-[15px] uppercase">Hermy<span className="text-[var(--accent)]">HQ</span></span>
     </div>
   );
 
@@ -170,21 +170,21 @@ export function Sidebar() {
                       <div key={item.href}>
                         <Link
                           href={item.href}
-                          className={`group relative flex items-center gap-3 px-3 py-[7px] rounded-[10px] transition-all duration-150 ${
+                          className={`group relative flex items-center gap-3 px-3 py-[7px] rounded-[var(--r-sm)] transition-all duration-150 ${
                             isActive
-                              ? "bg-[var(--surface-2)] text-[var(--text)]"
-                              : "text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-1)]"
+                              ? "bg-[var(--surface-2)] text-[var(--text)] border border-[var(--line-strong)]"
+                              : "text-[var(--text-2)] hover:text-[var(--text)] hover:bg-[var(--surface-1)] border border-transparent"
                           }`}
                         >
                           {isActive && (
-                            <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] rounded-full bg-[var(--accent)]" />
+                            <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-[var(--accent)] shadow-[0_0_6px_var(--accent-glow)]" />
                           )}
                           <Icon
                             className={`w-[17px] h-[17px] shrink-0 ${
-                              isActive ? "text-[var(--text)]" : "text-[var(--text-3)] group-hover:text-[var(--text-2)]"
+                              isActive ? "text-[var(--accent)]" : "text-[var(--text-3)] group-hover:text-[var(--text-2)]"
                             }`}
                           />
-                          <span className="text-[13.5px] font-medium">{item.label}</span>
+                          <span className="text-[13.5px] font-mono uppercase tracking-wide">{item.label}</span>
                         </Link>
                         {"anchors" in group &&
                           isActive &&
