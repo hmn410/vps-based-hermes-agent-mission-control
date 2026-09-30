@@ -40,6 +40,7 @@ import { claimRequest } from "./queue.mjs";
 import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } from "./dashboard-client.mjs";
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows } from "./kanban-reader.mjs";
+import { enrichExecutionEventPayload } from "./execution-event.mjs";
 import DatabaseConstructor from "better-sqlite3";
 
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
@@ -214,7 +215,7 @@ async function readKanbanTasks() {
 // Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
 // — the live "what's it doing" feed. Kanban timestamps are unix seconds.
 function readKanbanEvents(limit = 150) {
-  if (!fs.existsSync(KANBAN_DB_PATH)) return [];
+  if (!fs.existsSync(KANBAN_DB_PATH)) throw new Error(`kanban snapshot missing: ${KANBAN_DB_PATH}`);
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
     return db.prepare(
@@ -227,6 +228,17 @@ function readKanbanEvents(limit = 150) {
 }
 const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
 
+function boundedError(error) {
+  return String(error?.message || error || "unknown kanban event read error").slice(0, 300);
+}
+
+async function updateKanbanMirror(patch) {
+  const { rows } = await q(`SELECT data FROM "DataStore" WHERE key='hermes-kanban-mirror'`);
+  let current = {};
+  try { current = rows[0]?.data ? JSON.parse(rows[0].data) : {}; } catch { /* replace malformed metadata */ }
+  await setStore("hermes-kanban-mirror", { ...current, ...patch });
+}
+
 // ── Agent status derived from REAL kanban task state ──────────────────
 // Fixes the Agents tab showing agents stuck on "idle" for work they're
 // actually doing: previously "working" was only ever set client-side by
@@ -234,7 +246,7 @@ const toDate = (unixSecs) => (unixSecs ? new Date(unixSecs * 1000) : null);
 // kanban_create) never touched AgentState at all, and status never reset
 // if the modal/tab was closed. This instead reflects whatever the kanban
 // board actually shows, every mirror tick (independent of the browser).
-const ASSIGNEE_TO_AGENT = { default: "max", ops: "sage", builder: "knox", personal: "nova", seocontent: "pixel" };
+const ASSIGNEE_TO_AGENT = { default: "hermes", ops: "integgy", builder: "jbt", personal: "josh", seocontent: "pixel" };
 const ACTIVE_STATUSES = new Set(["triage", "todo", "ready", "running", "review", "blocked"]);
 async function syncAgentStates(rows) {
   const activeByAssignee = new Map();
@@ -260,15 +272,40 @@ async function syncAgentStates(rows) {
 
 async function mirrorKanban() {
   let rows;
-  try { rows = await readKanbanTasks(); } catch (e) { log("kanban read err", e.message); return; }
-  await setStore("hermes-kanban-mirror", {
+  try { rows = await readKanbanTasks(); } catch (e) {
+    log("kanban read err", e.message);
+    await updateKanbanMirror({
+      availability: "unavailable",
+      eventAvailability: "unavailable",
+      eventError: boundedError(e),
+    });
+    return;
+  }
+  await updateKanbanMirror({
     sourceReadAt: new Date().toISOString(),
     taskCount: rows.length,
     confirmedEmpty: rows.length === 0,
   });
   try { await syncAgentStates(rows); } catch (e) { log("syncAgentStates err", e.message); }
-  let events = [];
-  try { events = readKanbanEvents(); } catch (e) { log("kanban events read err", e.message); }
+  let events;
+  try {
+    events = readKanbanEvents();
+    await updateKanbanMirror({
+      availability: "available",
+      eventAvailability: "available",
+      lastSuccessfulEventReadAt: new Date().toISOString(),
+      newestEventId: events[0]?.id ?? null,
+      eventError: null,
+    });
+  } catch (e) {
+    log("kanban events read err", e.message);
+    await updateKanbanMirror({
+      availability: "unavailable",
+      eventAvailability: "unavailable",
+      eventError: boundedError(e),
+    });
+    events = [];
+  }
   const eventsByTask = new Map();
   for (const event of events) {
     const bucket = eventsByTask.get(event.task_id) || [];
@@ -315,12 +352,14 @@ async function mirrorKanban() {
   const ids = rows.map((t) => t.id);
   await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids]);
 
+  const tasksById = new Map(rows.map((task) => [task.id, task]));
   for (const e of events) {
+    const task = tasksById.get(e.task_id) || {};
     await q(
       `INSERT INTO "HermesTaskEvent" (id, "taskId", "runId", kind, payload, "createdAt", "syncedAt")
        VALUES ($1,$2,$3,$4,$5,$6, now())
        ON CONFLICT (id) DO NOTHING`,
-      [e.id, e.task_id, e.run_id ?? null, e.kind, e.payload ?? null, toDate(e.created_at)]
+      [e.id, e.task_id, e.run_id ?? null, e.kind, enrichExecutionEventPayload(e, task), toDate(e.created_at)]
     );
   }
   // Keep the mirrored event log bounded — prune anything older than the newest 500.

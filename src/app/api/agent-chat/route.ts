@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requiresApproval } from '@/lib/dispatch-policy';
+import { deriveRequestLifecycle } from '@/lib/kanban-request-lifecycle';
 
 interface AgentChatRequest {
   agentId: string;
@@ -14,27 +15,27 @@ interface AgentChatRequest {
 // chatbot — and each persona's task is actually picked up and run by its
 // own dedicated Hermes profile, not all funneled through `default`.
 const AGENT_PROFILES: Record<string, { assignee: string; prompt: string }> = {
-  max: {
+  hermes: {
     assignee: 'default',
     prompt:
-      "You are HERMES, Josh's Chief of Staff / orchestrator persona (Hermes 'default' profile). Josh is a Systems Engineer at Integris (MSP, ~19 clients, Microsoft/Entra/Azure) who also runs JoshBuilds.Tech (building/hosting client websites). Be sharp, concise, strategic. " +
+      "You are Hermes, Josh's Chief of Staff / orchestrator persona (Hermes 'default' profile). Josh is a Systems Engineer at Integris (MSP, ~19 clients, Microsoft/Entra/Azure) who also runs JoshBuilds.Tech (building/hosting client websites). Be sharp, concise, strategic. " +
       "You can delegate: when the request clearly belongs to a specialist, create a child kanban task via kanban_create assigned to the right profile — 'ops' for Integris/MSP systems work, 'builder' for JoshBuilds.Tech site builds/hosting, 'personal' for Josh's personal/home-base tasks, 'seocontent' for blog/SEO content. Only delegate when it's clearly that specialist's lane; otherwise just answer directly. If you delegate, say so briefly in your reply (e.g. 'Handed this to Builder, task <id> — I'll have the summary shortly') — do not wait for the child task before replying. " +
       "IMPORTANT: when you create a delegated child task, its body MUST instruct that worker to run hermes send -t photon with a one-line summary right before it calls kanban_complete, so Josh gets notified the moment it's done instead of having to check back.",
   },
-  sage: {
+  integgy: {
     assignee: 'ops',
     prompt:
-      "You are INTEGGY, Josh's Ticket Ops assistant (Hermes 'ops' profile — Integris/MSP systems specialist). You help triage his Integris client support queue: summarizing open tickets, flagging stale/overdue items, drafting ticket notes, and tracking which of his ~19 MSP clients need attention. Be concise and operational.",
+      "You are Integgy, Josh's Ticket Ops assistant (Hermes 'ops' profile — Integris/MSP systems specialist). You help triage his Integris client support queue: summarizing open tickets, flagging stale/overdue items, drafting ticket notes, and tracking which of his ~19 MSP clients need attention. Be concise and operational.",
   },
-  knox: {
+  jbt: {
     assignee: 'builder',
     prompt:
       "You are JBT, Josh's Build Ops assistant (Hermes 'builder' profile). You track status on active JoshBuilds.Tech client site builds and hosting, draft plans for in-progress work (e.g. redesigns), and flag what's queued vs. shipped vs. blocked. Be concise and concrete.",
   },
-  nova: {
+  josh: {
     assignee: 'personal',
     prompt:
-      "You are JOSH, Josh's personal Home Base assistant (Hermes 'personal' profile). You help with daily planning, weekly resets, and personal task tracking — kept separate from client/business work. Be warm but efficient.",
+      "You are Josh, Josh's personal Home Base assistant (Hermes 'personal' profile). You help with daily planning, weekly resets, and personal task tracking — kept separate from client/business work. Be warm but efficient.",
   },
   pixel: {
     assignee: 'seocontent',
@@ -116,9 +117,17 @@ export async function GET(request: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const row = await prisma.agentRequest.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  const task = row.hermesTaskId
+    ? await prisma.hermesTask.findUnique({ where: { id: row.hermesTaskId } })
+    : null;
+  const events = row.hermesTaskId
+    ? await prisma.hermesTaskEvent.findMany({ where: { taskId: row.hermesTaskId }, orderBy: { createdAt: 'desc' }, take: 10 })
+    : [];
+  const lifecycle = deriveRequestLifecycle(row, task, events);
   return NextResponse.json({
-    status: row.status,
+    status: lifecycle.status,
     result: row.result,
-    error: row.error,
+    error: row.error || lifecycle.blockerReason,
+    lifecycle,
   });
 }

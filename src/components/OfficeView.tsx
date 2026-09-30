@@ -23,10 +23,10 @@ interface Agent {
 
 // ── Desk layout ───────────────────────────────────────────
 const DESK_LAYOUT = [
-  { agentId: "max",   label: "CEO Corner",    zone: "ceo" },
-  { agentId: "sage",  label: "Ticket Queue",  zone: "team" },
-  { agentId: "knox",  label: "Build Desk",    zone: "team" },
-  { agentId: "nova",  label: "Home Base",     zone: "team" },
+  { agentId: "hermes",   label: "CEO Corner",    zone: "ceo" },
+  { agentId: "integgy",  label: "Ticket Queue",  zone: "team" },
+  { agentId: "jbt",  label: "Build Desk",    zone: "team" },
+  { agentId: "josh",  label: "Home Base",     zone: "team" },
   { agentId: "pixel", label: "Content Desk",  zone: "team" },
 ];
 
@@ -34,10 +34,10 @@ const DESK_LAYOUT = [
 // kept in sync with src/app/agents/page.tsx's PROFILE_MAP and
 // hermes-bridge/bridge.mjs's ASSIGNEE_TO_AGENT map.
 const PROFILE_MAP: Record<string, string> = {
-  max: "default",
-  sage: "ops",
-  knox: "builder",
-  nova: "personal",
+  hermes: "default",
+  integgy: "ops",
+  jbt: "builder",
+  josh: "personal",
   pixel: "seocontent",
 };
 
@@ -54,17 +54,17 @@ const STATUS: Record<string, { glow: string; dot: string; bg: string; ring?: str
 
 // ── Per-agent walk timing (keeps them out of sync) ────────
 const WALK = {
-  max:   { wanderDur: "14s", bobDur: "0.35s", bobDelay: "0s",    wanderDelay: "0s" },
-  sage:  { wanderDur: "8s",  bobDur: "0.40s", bobDelay: "0.1s",  wanderDelay: "1.2s" },
-  knox:  { wanderDur: "11s", bobDur: "0.45s", bobDelay: "0.2s",  wanderDelay: "2.5s" },
-  nova:  { wanderDur: "9s",  bobDur: "0.38s", bobDelay: "0.05s", wanderDelay: "0.7s" },
+  hermes:   { wanderDur: "14s", bobDur: "0.35s", bobDelay: "0s",    wanderDelay: "0s" },
+  integgy:  { wanderDur: "8s",  bobDur: "0.40s", bobDelay: "0.1s",  wanderDelay: "1.2s" },
+  jbt:  { wanderDur: "11s", bobDur: "0.45s", bobDelay: "0.2s",  wanderDelay: "2.5s" },
+  josh:  { wanderDur: "9s",  bobDur: "0.38s", bobDelay: "0.05s", wanderDelay: "0.7s" },
   pixel: { wanderDur: "12s", bobDur: "0.42s", bobDelay: "0.15s", wanderDelay: "3.1s" },
 };
 
 // ── Pixel art sprites ─────────────────────────────────────
 // '.' = transparent, letter = palette color
 const SPRITE_DATA: Record<string, { palette: Record<string, string>; rows: string[] }> = {
-  max: {
+  hermes: {
     palette: { E: "#94A3B8", F: "#E5E7EB", A: "#FBBF24", S: "#CBD5E1", N: "#1E293B", T: "#FDE68A" },
     rows: [
       ".EE..........EE.",
@@ -85,7 +85,7 @@ const SPRITE_DATA: Record<string, { palette: Record<string, string>; rows: strin
       "................",
     ],
   },
-  sage: {
+  integgy: {
     palette: { T: "#0EA5E9", C: "#7DD3FC", K: "#0C4A6E", W: "#F8FAFC", M: "#1E293B" },
     rows: [
       "....TTTTTTTT....",
@@ -106,7 +106,7 @@ const SPRITE_DATA: Record<string, { palette: Record<string, string>; rows: strin
       "................",
     ],
   },
-  knox: {
+  jbt: {
     palette: { H: "#EA580C", Y: "#FDE047", B: "#292524", W: "#F5F5F4" },
     rows: [
       "....HHHHHHHH....",
@@ -127,7 +127,7 @@ const SPRITE_DATA: Record<string, { palette: Record<string, string>; rows: strin
       "................",
     ],
   },
-  nova: {
+  josh: {
     palette: { P: "#3B82F6", S: "#FDE047", W: "#FFFFFF", M: "#1E3A8A" },
     rows: [
       "..S...SSSS...S..",
@@ -247,7 +247,7 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
   const isWorking = rawStatus === "working";
   const isOffline = rawStatus === "offline" || !agent;
   const spriteSize = isMax ? 56 : 44;
-  const walk = WALK[agent?.id as keyof typeof WALK] ?? WALK.sage;
+  const walk = WALK[agent?.id as keyof typeof WALK] ?? WALK.integgy;
 
   // Pick bubble text: currentTask > last activity > null
   const bubbleText = agent?.currentTask
@@ -370,8 +370,8 @@ function ActivityTicker({ agents }: { agents: Agent[] }) {
 // ── Main export ───────────────────────────────────────────
 export default function OfficeView({ agents }: { agents: Agent[] }) {
   const getAgent = (id: string) => agents.find(a => a.id === id);
-  const maxAgent = getAgent("max");
-  const teamDesks = DESK_LAYOUT.filter(d => d.agentId !== "max");
+  const maxAgent = getAgent("hermes");
+  const teamDesks = DESK_LAYOUT.filter(d => d.agentId !== "hermes");
 
   return (
     <div className="relative rounded-3xl overflow-hidden border border-neutral-800/60 bg-neutral-950/80">

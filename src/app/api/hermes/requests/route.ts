@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { deriveRequestLifecycle } from "@/lib/kanban-request-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,35 @@ export async function GET(req: Request) {
     }),
   ]);
 
+  const taskIds = requests.flatMap((request) => request.hermesTaskId ? [request.hermesTaskId] : []);
+  const [linkedTasks, linkedEvents] = taskIds.length
+    ? await Promise.all([
+        prisma.hermesTask.findMany({ where: { id: { in: taskIds } } }),
+        prisma.hermesTaskEvent.findMany({ where: { taskId: { in: taskIds } }, orderBy: { createdAt: "desc" }, take: 200 }),
+      ])
+    : [[], []];
+  const taskById = new Map(linkedTasks.map((task) => [task.id, task]));
+  const eventsByTask = new Map<string, typeof linkedEvents>();
+  for (const event of linkedEvents) {
+    const current = eventsByTask.get(event.taskId) ?? [];
+    current.push(event);
+    eventsByTask.set(event.taskId, current);
+  }
+  const projectedRequests = requests.map((request) => {
+    const lifecycle = deriveRequestLifecycle(
+      request,
+      request.hermesTaskId ? taskById.get(request.hermesTaskId) : null,
+      request.hermesTaskId ? eventsByTask.get(request.hermesTaskId) : [],
+    );
+    return { ...request, status: lifecycle.status, lifecycle };
+  });
+
   // Total "needs you" count spans both surfaces — pre-flight approvals AND
   // tasks that already started and then genuinely stalled on a human.
   const pending = approvalPending + blockedTasks.length;
 
   return NextResponse.json({
-    requests,
+    requests: projectedRequests,
     pending,
     approvalPending,
     blockedTasks: blockedTasks.map((t) => ({

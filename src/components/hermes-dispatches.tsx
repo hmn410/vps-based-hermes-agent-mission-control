@@ -17,6 +17,14 @@ type Req = {
   hermesTaskId?: string | null;
   createdAt: string;
   finishedAt: string | null;
+  lifecycle?: {
+    label: string;
+    queueAgeMs: number | null;
+    dispatcherAttention: boolean;
+    latestEvent: { kind: string; createdAt: string; message: string | null } | null;
+    blockerReason: string | null;
+    mirrorFreshnessMs: number | null;
+  };
 };
 
 function ago(d: string | null): string {
@@ -28,20 +36,34 @@ function ago(d: string | null): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+function duration(ms: number | null): string | null {
+  if (ms === null) return null;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 3600)}h`;
+}
+
 const TONE: Record<string, "neutral" | "up" | "down" | "warn" | "accent"> = {
   queued: "neutral",
+  waiting_for_dispatch: "neutral",
   awaiting_approval: "warn",
   approved: "accent",
   running: "accent",
+  review: "accent",
+  blocked: "warn",
   done: "up",
   failed: "down",
   rejected: "neutral",
 };
 const LABEL: Record<string, string> = {
   queued: "Queued",
+  waiting_for_dispatch: "Queued for dispatcher",
   awaiting_approval: "Awaiting approval",
   approved: "Approved",
   running: "Running",
+  review: "In review",
+  blocked: "Blocked",
   done: "Done",
   failed: "Failed",
   rejected: "Rejected",
@@ -110,18 +132,35 @@ function AnswerCard({ request }: { request: Req }) {
 
 function ActiveCard({ request }: { request: Req }) {
   const tone = TONE[request.status] || "neutral";
+  const lifecycle = request.lifecycle;
+  const queueAge = duration(lifecycle?.queueAgeMs ?? null);
+  const mirrorAge = duration(lifecycle?.mirrorFreshnessMs ?? null);
   return (
     <Panel className="p-4">
-      <div className="flex items-center gap-3">
-        <span className="relative flex h-2 w-2 shrink-0">
+      <div className="flex items-start gap-3">
+        <span className="relative mt-1 flex h-2 w-2 shrink-0">
           {request.status === "running" && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />}
           <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13.5px] text-[var(--text)]">{request.title}</p>
           <DeliveryMeta request={request} />
+          <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 num text-[10.5px] text-[var(--text-3)]">
+            {queueAge && <span>Queue age: {queueAge}</span>}
+            {lifecycle?.latestEvent && <span>Latest: {lifecycle.latestEvent.kind} {ago(lifecycle.latestEvent.createdAt)}</span>}
+            {mirrorAge && <span>Mirror: {mirrorAge} ago</span>}
+          </div>
+          {request.status === "waiting_for_dispatch" && (
+            <p className="mt-2 text-[12px] text-[var(--text-3)]">Waiting for a dispatcher to claim this task.</p>
+          )}
+          {lifecycle?.dispatcherAttention && (
+            <p className="mt-2 text-[12px] text-[var(--warn)]">Dispatcher attention: this task has waited over 2 minutes without a claim.</p>
+          )}
+          {request.status === "blocked" && (
+            <p className="mt-2 text-[12px] text-[var(--warn)]">Blocked: {lifecycle?.blockerReason || request.error || "Waiting for input"}</p>
+          )}
         </div>
-        <Pill tone={tone}>{LABEL[request.status] || request.status}</Pill>
+        <Pill tone={tone}>{lifecycle?.label || LABEL[request.status] || request.status}</Pill>
       </div>
     </Panel>
   );

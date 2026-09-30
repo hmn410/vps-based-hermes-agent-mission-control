@@ -33,10 +33,10 @@ const statusConfig: Record<string, { color: string; dot: string; label: string; 
 };
 
 const roleColors: Record<string, string> = {
-  max: "from-slate-400/20 to-slate-500/5 border-slate-400/20",
-  sage: "from-sky-500/20 to-sky-600/5 border-sky-500/20",
-  knox: "from-orange-500/20 to-orange-600/5 border-orange-500/20",
-  nova: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
+  hermes: "from-slate-400/20 to-slate-500/5 border-slate-400/20",
+  integgy: "from-sky-500/20 to-sky-600/5 border-sky-500/20",
+  jbt: "from-orange-500/20 to-orange-600/5 border-orange-500/20",
+  josh: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
   pixel: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
 };
 
@@ -45,10 +45,10 @@ const roleColors: Record<string, string> = {
 // actually running on (kept in sync with hermes-bridge/bridge.mjs's
 // ASSIGNEE_TO_AGENT map and the assignee list in api/agent-chat/route.ts).
 const PROFILE_MAP: Record<string, string> = {
-  max: "default",
-  sage: "ops",
-  knox: "builder",
-  nova: "personal",
+  hermes: "default",
+  integgy: "ops",
+  jbt: "builder",
+  josh: "personal",
   pixel: "seocontent",
 };
 
@@ -358,8 +358,8 @@ export default function AgentsPage() {
     );
   }
 
-  const maxAgent = agents.find(a => a.id === "max");
-  const teamAgents = agents.filter(a => a.id !== "max");
+  const maxAgent = agents.find(a => a.id === "hermes");
+  const teamAgents = agents.filter(a => a.id !== "hermes");
   const online = agents.filter(a => a.status !== "offline").length;
   const working = agents.filter(a => a.status === "working").length;
   const totalTasks = agents.reduce((sum, a) => sum + a.tasksCompleted, 0);
@@ -425,15 +425,15 @@ export default function AgentsPage() {
           <OfficeView agents={agents} />
           {/* Chat quick-launch strip */}
           <div className="flex flex-wrap gap-2 pt-2">
-            {agents.filter(a => a.id !== "max").map(a => (
+            {agents.filter(a => a.id !== "hermes").map(a => (
               <button key={a.id} onClick={() => setChatAgent(a)}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] text-[var(--text-2)] transition-colors panel-interactive"
                 style={{ background: "var(--surface-1)", border: "1px solid var(--line)" }}>
                 <span>{a.emoji}</span> Chat with {a.name}
               </button>
             ))}
-            {agents.find(a => a.id === "max") && (
-              <button onClick={() => setChatAgent(agents.find(a => a.id === "max")!)}
+            {agents.find(a => a.id === "hermes") && (
+              <button onClick={() => setChatAgent(agents.find(a => a.id === "hermes")!)}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] transition-colors"
                 style={{ color: "var(--accent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 28%, transparent)" }}>
                 🪽 Chat with HERMES

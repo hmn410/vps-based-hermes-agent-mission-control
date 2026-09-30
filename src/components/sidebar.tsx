@@ -14,6 +14,7 @@ import {
   X,
   LogOut,
   Coins,
+  Activity,
 } from "lucide-react";
 
 const navGroups = [
@@ -22,6 +23,7 @@ const navGroups = [
     items: [
       { href: "/", label: "Morning Brief", icon: Home },
       { href: "/hermes", label: "Dispatch Terminal", icon: Cpu },
+      { href: "/live-work", label: "Live Work", icon: Activity },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
       { href: "/usage", label: "Usage", icon: Coins },
     ],
@@ -39,6 +41,7 @@ const navGroups = [
 const mobileTabsRaw = [
   { href: "/", label: "Brief", icon: Home },
   { href: "/hermes", label: "Dispatch", icon: Cpu },
+  { href: "/live-work", label: "Live", icon: Activity },
   { href: "/tasks", label: "Tasks", icon: ClipboardList },
   { href: "/agents", label: "Agents", icon: Bot },
 ];

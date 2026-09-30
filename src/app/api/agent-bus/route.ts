@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   const msg = await prisma.agentBusMessage.create({
     data: {
       fromAgent: body.from || "unknown",
-      toAgent: body.to || "max",
+      toAgent: body.to || "hermes",
       type: body.type || "insight",
       content: body.content || "",
       metadata: body.metadata || {},

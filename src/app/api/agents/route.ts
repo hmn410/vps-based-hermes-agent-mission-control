@@ -7,8 +7,8 @@ export const revalidate = 0;
 // Default agent roster
 const DEFAULT_AGENTS = [
   {
-    id: "max",
-    name: "HERMES",
+    id: "hermes",
+    name: "Hermes",
     emoji: "\uD83E\uDEBD",
     role: "Chief of Staff \u00B7 Orchestrator",
     status: "online",
@@ -17,8 +17,8 @@ const DEFAULT_AGENTS = [
     recentActivity: [],
   },
   {
-    id: "sage",
-    name: "INTEGGY",
+    id: "integgy",
+    name: "Integgy",
     emoji: "\uD83C\uDFA7",
     role: "Ticket Ops \u00B7 Integris Support Queue",
     status: "idle",
@@ -27,7 +27,7 @@ const DEFAULT_AGENTS = [
     recentActivity: [],
   },
   {
-    id: "knox",
+    id: "jbt",
     name: "JBT",
     emoji: "\uD83D\uDC77",
     role: "Build Ops \u00B7 JoshBuilds.Tech Status",
@@ -37,8 +37,8 @@ const DEFAULT_AGENTS = [
     recentActivity: [],
   },
   {
-    id: "nova",
-    name: "JOSH",
+    id: "josh",
+    name: "Josh",
     emoji: "\uD83C\uDFE1",
     role: "Home Base \u00B7 Personal Assistant",
     status: "idle",
