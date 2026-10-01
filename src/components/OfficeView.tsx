@@ -41,6 +41,19 @@ const PROFILE_MAP: Record<string, string> = {
   pixel: "seocontent",
 };
 
+// Presentation-only aliases for the agent floor. Backing ids and Hermes
+// profiles remain unchanged; this only swaps the two visible labels for
+// every agent — the big title now shows the profile tag, and the small
+// badge now shows the persona name.
+function displayAgentName(agent: Agent | undefined): string {
+  if (!agent) return "Empty";
+  return (PROFILE_MAP[agent.id] ?? agent.name).toUpperCase();
+}
+
+function displayProfileName(agent: Agent): string {
+  return agent.name.toUpperCase();
+}
+
 // ── Status → visual config ────────────────────────────────
 const STATUS: Record<string, { glow: string; dot: string; bg: string; ring?: string }> = {
   working:   { glow: "shadow-[0_0_24px_6px_rgba(56,189,248,0.45)]",  dot: "bg-sky-400",     bg: "bg-sky-900/30 border-sky-500/40",     ring: "rgba(56,189,248,0.5)" },
@@ -324,7 +337,7 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
         <div className="flex items-center justify-center gap-1.5">
           <div className={`w-1.5 h-1.5 rounded-full ${colors.dot} ${isWorking ? "animate-pulse" : ""}`} />
           <span className={`text-[11px] font-bold tracking-wider uppercase ${isOffline ? "text-neutral-600" : "text-white/80"}`}>
-            {agent?.name ?? "Empty"}
+            {displayAgentName(agent)}
           </span>
         </div>
         <div className={`text-[10px] uppercase tracking-wider mt-0.5 ${isOffline ? "text-neutral-700" : "text-neutral-500"}`}>{label}</div>
@@ -334,7 +347,7 @@ function AgentDesk({ agent, label, isMax }: { agent: Agent | undefined; label: s
             className="text-[8px] font-mono uppercase tracking-wide mt-1 inline-block px-1.5 py-0.5 rounded border border-neutral-700/60 bg-neutral-800/50 text-neutral-500"
             title="Hermes profile this desk's tasks run on"
           >
-            {PROFILE_MAP[agent.id] ?? "?"}
+            {displayProfileName(agent)}
           </div>
         )}
       </div>

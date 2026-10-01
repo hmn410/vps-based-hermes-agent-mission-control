@@ -52,6 +52,18 @@ const PROFILE_MAP: Record<string, string> = {
   pixel: "seocontent",
 };
 
+// Presentation-only aliases for the agent floor. Backing ids and Hermes
+// profiles remain unchanged; this only swaps the two visible labels for
+// every agent — the big title now shows the profile tag, and the small
+// badge now shows the persona name.
+function displayAgentName(agent: Agent): string {
+  return (PROFILE_MAP[agent.id] ?? agent.name).toUpperCase();
+}
+
+function displayProfileName(agent: Agent): string {
+  return agent.name.toUpperCase();
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -64,6 +76,7 @@ function timeAgo(dateStr: string): string {
 
 function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: boolean; onToggle: () => void }) {
   const status = statusConfig[agent.status] || statusConfig.offline;
+  const displayName = displayAgentName(agent);
 
   return (
     <div className="panel panel-interactive overflow-hidden">
@@ -83,14 +96,14 @@ function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: 
                 {status.pulse && <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ background: status.dot }} />}
                 <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: status.dot }} />
               </span>
-              <h3 className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</h3>
+              <h3 className="text-[14px] font-semibold text-[var(--text)]">{displayName}</h3>
               <span className="text-[10px] font-medium" style={{ color: status.color }}>{status.label}</span>
               <span
                 className="text-[9px] font-mono px-1.5 py-0.5 rounded uppercase tracking-wide"
                 style={{ background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text-4)" }}
                 title="Hermes profile this agent's tasks run on"
               >
-                {PROFILE_MAP[agent.id] ?? "?"}
+                {displayProfileName(agent)}
               </span>
             </div>
             <p className="text-[12px] text-[var(--text-3)] mt-1">{agent.role}</p>
@@ -172,6 +185,7 @@ async function markAgentIdle(agentId: string, action: string) {
 }
 
 function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  const displayName = displayAgentName(agent);
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<ChatMsg[]>(() => loadStoredChat(agent.id).msgs);
   const [loading, setLoading] = useState(() => Boolean(loadStoredChat(agent.id).pendingRequestId));
@@ -273,7 +287,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
         <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: "1px solid var(--line)" }}>
           <div className="text-2xl">{agent.emoji}</div>
           <div>
-            <div className="text-[14px] font-semibold text-[var(--text)]">{agent.name}</div>
+            <div className="text-[14px] font-semibold text-[var(--text)]">{displayName}</div>
             <div className="text-[12px] text-[var(--text-3)]">{agent.role}</div>
           </div>
           <button onClick={onClose} className="ml-auto text-[var(--text-3)] hover:text-[var(--text)] transition-colors text-xl leading-none">×</button>
@@ -282,7 +296,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
         <div className="h-80 overflow-y-auto p-4 space-y-3 flex flex-col" style={{ background: "var(--surface-1)" }}>
           {msgs.length === 0 && (
             <div className="flex-1 flex items-center justify-center">
-              <p className="text-[var(--text-3)] text-[13px] text-center">Ask {agent.name} anything.<br/>They&apos;re ready.</p>
+              <p className="text-[var(--text-3)] text-[13px] text-center">Ask {displayName} anything.<br/>They&apos;re ready.</p>
             </div>
           )}
           {msgs.map((m, i) => (
@@ -311,7 +325,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
-            placeholder={`Message ${agent.name}…`}
+            placeholder={`Message ${displayName}…`}
             className="flex-1 rounded-full px-4 py-2 text-[13px] text-[var(--text)] focus:outline-none transition-colors"
             style={{ background: "var(--surface-1)", border: "1px solid var(--line)" }}
           />
@@ -429,7 +443,7 @@ export default function AgentsPage() {
               <button key={a.id} onClick={() => setChatAgent(a)}
                 className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[12px] text-[var(--text-2)] transition-colors panel-interactive"
                 style={{ background: "var(--surface-1)", border: "1px solid var(--line)" }}>
-                <span>{a.emoji}</span> Chat with {a.name}
+                <span>{a.emoji}</span> Chat with {displayAgentName(a)}
               </button>
             ))}
             {agents.find(a => a.id === "hermes") && (
@@ -493,7 +507,7 @@ export default function AgentsPage() {
                     style={{ background: "var(--surface-1)", border: "1px solid var(--line)", opacity: agent.status === "offline" ? 0.5 : 1 }}>
                     <span className="text-lg">{agent.emoji}</span>
                     <div>
-                      <div className="text-[12px] font-semibold text-[var(--text)]">{agent.name}</div>
+                      <div className="text-[12px] font-semibold text-[var(--text)]">{displayAgentName(agent)}</div>
                       <div className="text-[10px] text-[var(--text-3)]">{agent.role}</div>
                     </div>
                   </div>
