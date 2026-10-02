@@ -23,6 +23,23 @@ import {
   Eyebrow,
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
+import cronstrue from "cronstrue";
+
+// Hermes' cron list already returns human text for most schedules
+// ("every monday 7:45am", "weekdays at 4:30pm", "once at ..."), but jobs
+// created directly with raw cron syntax (e.g. "0,30 7-21 * * *") show up
+// as unreadable numbers. Detect that shape and translate it to English;
+// leave anything already human-readable untouched.
+const RAW_CRON = /^\s*(\S+\s+){4}\S+\s*$/;
+function humanizeSchedule(schedule: string): string {
+  if (!schedule) return schedule;
+  if (!RAW_CRON.test(schedule)) return schedule;
+  try {
+    return cronstrue.toString(schedule.trim(), { verbose: false, throwExceptionOnParseError: true });
+  } catch {
+    return schedule;
+  }
+}
 
 // ── Types ─────────────────────────────────────────────────
 type ReqStatus =
@@ -436,8 +453,19 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
         label="Cron · schedules"
         title="Recurring jobs"
         action={
-          <span className="num text-[11px] text-[var(--text-3)]">
-            synced {timeAgo(syncedAt)}
+          <span className="flex items-center gap-2">
+            <span className="num text-[11px] text-[var(--text-3)]">
+              synced {timeAgo(syncedAt)}
+            </span>
+            <button
+              type="button"
+              onClick={onDone}
+              title="Refresh now"
+              aria-label="Refresh schedules"
+              className="btn-ghost p-1.5 rounded-full"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </span>
         }
       />
@@ -465,7 +493,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium text-[var(--text)] truncate">{j.name || j.id}</p>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 num text-[11px] text-[var(--text-3)]">
-                          <span className="text-[var(--text-2)]">{j.schedule}</span>
+                          <span className="text-[var(--text-2)]">{humanizeSchedule(j.schedule)}</span>
                           {j.nextRun && <span>next {timeUntil(j.nextRun)}</span>}
                           {j.deliver && <span>→ {j.deliver.split(":")[0]}</span>}
                           {j.skills && <span>{j.skills}</span>}
@@ -502,7 +530,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                 <input
                   value={schedule}
                   onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="Schedule (e.g. 0 9 * * 1)"
+                  placeholder={'Schedule — plain English works, e.g. "every monday 7:45am" or "weekdays at 4:30pm"'}
                   className="w-full bg-transparent num text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
                 />
                 <textarea
