@@ -62,11 +62,14 @@ function fmtCost(n: number | null | undefined) {
 
 function fmtRelative(unixSeconds: number | null | undefined) {
   if (!unixSeconds) return "—";
-  const diff = Date.now() / 1000 - unixSeconds;
+  const diff = Math.max(0, Date.now() / 1000 - unixSeconds);
   const days = Math.floor(diff / 86400);
+  const hours = Math.floor((diff % 86400) / 3600);
   if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return `${days}d ago`;
+  if (days === 1 && hours === 0) return "Yesterday";
+  // Analytics windows are rolling 24-hour periods. Include hours once a
+  // session is older than a day so "7d ago" cannot imply it is in the 7d view.
+  return hours > 0 ? `${days}d ${hours}h ago` : `${days}d ago`;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
