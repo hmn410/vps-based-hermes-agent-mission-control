@@ -82,6 +82,23 @@ function timeAgo(d: string | null): string {
   return `${days}d ago`;
 }
 
+// Like timeAgo but for a timestamp that may be in the future (e.g. a cron's next run).
+function timeUntil(d: string | null): string {
+  if (!d) return "—";
+  const target = new Date(d).getTime();
+  if (Number.isNaN(target)) return "—";
+  const diff = target - Date.now();
+  if (diff <= 0) return timeAgo(d);
+  const s = Math.floor(diff / 1000);
+  if (s < 45) return "in <1m";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `in ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `in ${h}h`;
+  const days = Math.floor(h / 24);
+  return `in ${days}d`;
+}
+
 async function getJSON<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url, { cache: "no-store" });
@@ -449,7 +466,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                         <p className="text-[13px] font-medium text-[var(--text)] truncate">{j.name || j.id}</p>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 num text-[11px] text-[var(--text-3)]">
                           <span className="text-[var(--text-2)]">{j.schedule}</span>
-                          {j.nextRun && <span>next {timeAgo(j.nextRun)}</span>}
+                          {j.nextRun && <span>next {timeUntil(j.nextRun)}</span>}
                           {j.deliver && <span>→ {j.deliver.split(":")[0]}</span>}
                           {j.skills && <span>{j.skills}</span>}
                         </div>
@@ -540,10 +557,23 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
 }
 
 // ── Activity feed ─────────────────────────────────────────
+const ACTIVITY_PAGE_SIZE = 10;
 function ActivityFeed({ events }: { events: Ev[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(events.length / ACTIVITY_PAGE_SIZE));
+  const clampedPage = Math.min(page, pageCount - 1);
+  const pageEvents = events.slice(clampedPage * ACTIVITY_PAGE_SIZE, clampedPage * ACTIVITY_PAGE_SIZE + ACTIVITY_PAGE_SIZE);
   return (
     <>
-      <SectionHeader label="Activity" title="Recent events" />
+      <SectionHeader
+        label="Activity"
+        title="Recent events"
+        action={
+          events.length > 0 ? (
+            <span className="num text-[11px] text-[var(--text-3)]">{events.length} total</span>
+          ) : undefined
+        }
+      />
       {events.length === 0 ? (
         <Panel className="p-2">
           <EmptyState
@@ -553,38 +583,63 @@ function ActivityFeed({ events }: { events: Ev[] }) {
           />
         </Panel>
       ) : (
-        <Panel className="p-2">
-          <div className="divide-y divide-[var(--line)]">
-            {events.map((e) => (
-              <div key={e.id} className="flex items-start gap-3 px-3.5 py-3">
-                <span
-                  className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
-                  style={{ background: levelColor(e.level) }}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[13px] font-medium text-[var(--text)] leading-snug truncate">
-                      {e.title}
-                    </p>
-                    <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 ml-auto">
-                      {timeAgo(e.createdAt)}
-                    </span>
+        <>
+          <Panel className="p-2">
+            <div className="divide-y divide-[var(--line)]">
+              {pageEvents.map((e) => (
+                <div key={e.id} className="flex items-start gap-3 px-3.5 py-3">
+                  <span
+                    className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ background: levelColor(e.level) }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] font-medium text-[var(--text)] leading-snug truncate">
+                        {e.title}
+                      </p>
+                      <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 ml-auto">
+                        {timeAgo(e.createdAt)}
+                      </span>
+                    </div>
+                    {e.detail && (
+                      <p className="mt-0.5 text-[12.5px] text-[var(--text-2)] leading-snug line-clamp-2">
+                        {e.detail}
+                      </p>
+                    )}
+                    {e.agent && (
+                      <span className="num text-[10.5px] text-[var(--text-3)] mt-1 inline-block">
+                        {e.agent}
+                      </span>
+                    )}
                   </div>
-                  {e.detail && (
-                    <p className="mt-0.5 text-[12.5px] text-[var(--text-2)] leading-snug line-clamp-2">
-                      {e.detail}
-                    </p>
-                  )}
-                  {e.agent && (
-                    <span className="num text-[10.5px] text-[var(--text-3)] mt-1 inline-block">
-                      {e.agent}
-                    </span>
-                  )}
                 </div>
-              </div>
-            ))}
-          </div>
-        </Panel>
+              ))}
+            </div>
+          </Panel>
+          {pageCount > 1 && (
+            <div className="flex items-center justify-between mt-3 px-1">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={clampedPage === 0}
+                className="btn-ghost inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              <span className="num text-[11px] text-[var(--text-3)]">
+                Page {clampedPage + 1} of {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={clampedPage >= pageCount - 1}
+                className="btn-ghost inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
       )}
     </>
   );
@@ -607,7 +662,7 @@ export default function HermesPage() {
       getJSON<{ requests: Req[]; pending: number }>(
         "/api/hermes/requests?status=awaiting_approval&take=50"
       ),
-      getJSON<{ events: Ev[] }>("/api/hermes/activity?take=40"),
+      getJSON<{ events: Ev[] }>("/api/hermes/activity?take=30"),
       getJSON<{ jobs: CronJob[]; syncedAt: string }>("/api/hermes/crons"),
     ]);
     if (h) setHealth(h);

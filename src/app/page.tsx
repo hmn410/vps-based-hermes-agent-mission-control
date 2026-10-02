@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarCheck, ChevronDown, ChevronUp, Mail, ShieldCheck } from "lucide-react";
+import { ChevronDown, ChevronUp, Mail, ShieldCheck } from "lucide-react";
 import { HermesBriefing } from "@/components/hermes-briefing";
 import { ApprovalInbox } from "@/components/approval-inbox";
 import { GmailPanel } from "@/components/gmail-panel";
@@ -30,7 +30,7 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-stretch">
-        <HermesBriefing className="xl:col-span-2 self-start" />
+        <HermesBriefing className="xl:col-span-2 min-h-[420px]" />
         <CalendarPanel className="min-h-[420px]" />
       </section>
 
@@ -63,11 +63,7 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="mt-9 grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="panel p-5">
-          <div className="flex items-center gap-2"><CalendarCheck className="w-4 h-4 text-[var(--accent)]" /><span className="eyebrow">Daily focus</span></div>
-          <p className="mt-3 text-[13px] leading-relaxed text-[var(--hq-text-dim)]">Generate the brief each morning to review today’s tasks, personal follow-ups, JoshBuilds priorities, and work follow-ups you have manually recorded.</p>
-        </div>
+      <section className="mt-9">
         <div className="panel p-5">
           <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-[var(--warn)]" /><span className="eyebrow">Approval boundary</span></div>
           <p className="mt-3 text-[13px] leading-relaxed text-[var(--hq-text-dim)]">Drafting, research, task updates, and wiki edits can run internally. Sending email, calendar changes, publishing, and other active changes wait in the Approval Inbox.</p>
