@@ -15,6 +15,7 @@ import {
   LogOut,
   Coins,
   Activity,
+  MessageSquare,
 } from "lucide-react";
 
 const navGroups = [
@@ -23,6 +24,7 @@ const navGroups = [
     items: [
       { href: "/", label: "Morning Brief", icon: Home },
       { href: "/hermes", label: "Dispatch Terminal", icon: Cpu },
+      { href: "/follow-ups", label: "Follow-ups", icon: MessageSquare },
       { href: "/live-work", label: "Live Work", icon: Activity },
       { href: "/tasks", label: "Tasks", icon: ClipboardList },
       { href: "/usage", label: "Usage", icon: Coins },

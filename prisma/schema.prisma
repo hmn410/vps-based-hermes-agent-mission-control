@@ -154,6 +154,11 @@ model AgentRequest {
   result        String?
   error         String?
   hermesTaskId  String?
+  // Replies are separate, auditable dispatches while conversationId keeps the
+  // original request and every follow-up together in the HQ inbox.
+  conversationId String?
+  replyToId      String?
+  replyText      String?   @db.Text
   decidedAt     DateTime?
   startedAt     DateTime?
   finishedAt    DateTime?
@@ -162,6 +167,8 @@ model AgentRequest {
 
   @@index([status])
   @@index([createdAt])
+  @@index([conversationId, createdAt])
+  @@index([replyToId])
 }
 
 model AgentEvent {

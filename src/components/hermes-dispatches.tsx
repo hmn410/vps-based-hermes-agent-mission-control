@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronDown, Copy, Send } from "lucide-react";
+import { Check, ChevronDown, Copy, MessageSquare, Send } from "lucide-react";
 import { EmptyState, Panel, Pill, SectionHeader } from "@/components/ui/kit";
 
 type Req = {
@@ -131,11 +131,16 @@ function AnswerCard({ request }: { request: Req }) {
           ) : (
             <p className="mt-3 text-[12.5px] text-[var(--text-3)]">Hermes completed this work without a written result.</p>
           )}
-          {body && (
-            <button type="button" onClick={copy} className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-[var(--text-3)] hover:text-[var(--text-2)]">
-              <Copy className="h-3 w-3" /> {copied ? "Copied" : "Copy result"}
-            </button>
-          )}
+          <div className="mt-2 flex items-center gap-3">
+            {body && (
+              <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-3)] hover:text-[var(--text-2)]">
+                <Copy className="h-3 w-3" /> {copied ? "Copied" : "Copy result"}
+              </button>
+            )}
+            <a href="/follow-ups" className="inline-flex items-center gap-1.5 text-[11px] text-[var(--accent)] hover:text-[var(--text)]">
+              <MessageSquare className="h-3 w-3" /> Reply / request correction
+            </a>
+          </div>
         </div>
       )}
     </Panel>
