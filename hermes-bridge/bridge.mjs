@@ -41,6 +41,7 @@ import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } 
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows } from "./kanban-reader.mjs";
 import { enrichExecutionEventPayload } from "./execution-event.mjs";
+import { deriveAgentActivity, completedTaskCount } from "./agent-activity.mjs";
 import DatabaseConstructor from "better-sqlite3";
 
 const API_URL = (process.env.HERMES_API_URL || "http://127.0.0.1:8642").replace(/\/+$/, "");
@@ -259,13 +260,20 @@ async function syncAgentStates(rows) {
   for (const agentId of Object.values(ASSIGNEE_TO_AGENT)) {
     const currentTask = activeByAssignee.get(agentId) || null;
     const status = currentTask ? "working" : "idle";
+    // Cards used to read a JSON field that was only written by the optional
+    // chat modal, so real kanban work never appeared as agent activity.
+    const activity = deriveAgentActivity(rows, agentId, ASSIGNEE_TO_AGENT);
+    const latestActivity = activity[0]?.timestamp || null;
+    const tasksCompleted = completedTaskCount(rows, agentId, ASSIGNEE_TO_AGENT);
     await q(
-      `INSERT INTO "AgentState" (id, name, status, "currentTask", "lastActive", "updatedAt")
-       VALUES ($1,$1,$2,$3, CASE WHEN $2='working' THEN now() ELSE NULL END, now())
+      `INSERT INTO "AgentState" (id, name, status, "currentTask", "lastActive", "tasksCompleted", "recentActivity", "updatedAt")
+       VALUES ($1,$1,$2,$3,$4,$5,$6::jsonb, now())
        ON CONFLICT (id) DO UPDATE SET status=$2, "currentTask"=$3,
-         "lastActive"=CASE WHEN $2='working' THEN now() ELSE "AgentState"."lastActive" END,
+         "lastActive"=COALESCE($4::timestamptz, "AgentState"."lastActive"),
+         "tasksCompleted"=$5,
+         "recentActivity"=CASE WHEN jsonb_array_length($6::jsonb)>0 THEN $6::jsonb ELSE "AgentState"."recentActivity" END,
          "updatedAt"=now()`,
-      [agentId, status, currentTask]
+      [agentId, status, currentTask, latestActivity, tasksCompleted, JSON.stringify(activity)]
     );
   }
 }
