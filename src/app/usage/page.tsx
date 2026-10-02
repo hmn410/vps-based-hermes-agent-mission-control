@@ -86,6 +86,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 // compression calls, stray session-only rows) get folded into a collapsed
 // "Minor / auxiliary" section instead of cluttering the primary view.
 const MINOR_TOKEN_THRESHOLD = 5000;
+const USAGE_POLL_MS = 60_000;
 function isMinor(m: ModelUsage) {
   const tokens = (m.input_tokens || 0) + (m.output_tokens || 0);
   return (m.estimated_cost || 0) === 0 && tokens < MINOR_TOKEN_THRESHOLD;
@@ -129,7 +130,7 @@ function ModelRow({ m, maxCost }: { m: ModelUsage; maxCost: number }) {
       {/* Sessions / calls */}
       <div>
         <p className="num text-[13px] text-[var(--text-2)]">{m.sessions}</p>
-        <p className="text-[10.5px] text-[var(--text-4)] mt-0.5">{m.api_calls} calls</p>
+        <p className="text-[10.5px] text-[var(--text-4)] mt-0.5">{(m.api_calls || 0).toLocaleString()} API calls</p>
       </div>
 
       {/* Last used */}
@@ -160,12 +161,14 @@ export default function UsagePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [days, setDays] = useState(30);
   const [showMinor, setShowMinor] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
   const load = useCallback(async (d: number) => {
     try {
       const res = await fetch(`/api/hermes/analytics?days=${d}`, { cache: "no-store" });
       const json = (await res.json()) as AnalyticsResponse;
       setData(json);
+      setUpdatedAt(Date.now());
     } catch {
       setData({ models: [], totals: null, period_days: d, error: "Failed to load" });
     } finally {
@@ -173,8 +176,24 @@ export default function UsagePage() {
     }
   }, []);
 
+  // Fetch on mount / window change, then keep the view live: poll while the
+  // tab is visible and refetch when it regains focus. Previously the page only
+  // loaded once, so a tab left open overnight kept showing stale numbers.
   useEffect(() => {
-    load(days);
+    void load(days);
+    const iv = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(days);
+    }, USAGE_POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load(days);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      window.clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [load, days]);
 
   const manualRefresh = async () => {
@@ -229,6 +248,10 @@ export default function UsagePage() {
           <p className="num text-[var(--text-4)] text-[12px] mt-3">
             {active.length} active model{active.length === 1 ? "" : "s"}
             {minor.length > 0 && ` · ${minor.length} minor`} · last {days} days
+            {updatedAt && ` · updated ${new Date(updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
+          </p>
+          <p className="text-[var(--text-4)] text-[11px] mt-1">
+            Hermes-recorded sessions only. Direct Claude Code CLI runs outside Hermes are not counted.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -264,7 +287,7 @@ export default function UsagePage() {
 
       {/* Totals strip */}
       {totals && (
-        <div className="hq-rise grid grid-cols-2 md:grid-cols-4 gap-3 mb-8" style={rise(1)}>
+        <div className="hq-rise grid grid-cols-2 md:grid-cols-5 gap-3 mb-8" style={rise(1)}>
           <Panel className="p-4">
             <div className="flex items-center gap-1.5 text-[var(--text-4)] mb-1.5">
               <Coins className="w-3.5 h-3.5" />
@@ -286,7 +309,13 @@ export default function UsagePage() {
               <Cpu className="w-3.5 h-3.5" />
               <span className="text-[10.5px] uppercase tracking-wide">Sessions</span>
             </div>
-            <p className="num text-[20px] font-semibold text-[var(--text)]">{totals.total_sessions}</p>
+            <p className="num text-[20px] font-semibold text-[var(--text)]">{(totals.total_sessions || 0).toLocaleString()}</p>
+          </Panel>
+          <Panel className="p-4">
+            <div className="flex items-center gap-1.5 text-[var(--text-4)] mb-1.5">
+              <span className="text-[10.5px] uppercase tracking-wide">API calls</span>
+            </div>
+            <p className="num text-[20px] font-semibold text-[var(--text)]">{(totals.total_api_calls || 0).toLocaleString()}</p>
           </Panel>
           <Panel className="p-4">
             <div className="flex items-center gap-1.5 text-[var(--text-4)] mb-1.5">
