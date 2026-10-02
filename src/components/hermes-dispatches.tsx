@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, Send } from "lucide-react";
+import { Check, ChevronDown, Copy, Send } from "lucide-react";
 import { EmptyState, Panel, Pill, SectionHeader } from "@/components/ui/kit";
 
 type Req = {
@@ -85,8 +85,10 @@ function DeliveryMeta({ request }: { request: Req }) {
 
 function AnswerCard({ request }: { request: Req }) {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const body = request.error || request.result;
-  const copy = async () => {
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (!body || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(body);
@@ -99,7 +101,12 @@ function AnswerCard({ request }: { request: Req }) {
 
   return (
     <Panel className="p-4">
-      <div className="flex items-start gap-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-start gap-3 text-left"
+      >
         <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--up)_12%,transparent)] text-[var(--up)]">
           <Check className="h-3.5 w-3.5" />
         </span>
@@ -110,6 +117,11 @@ function AnswerCard({ request }: { request: Req }) {
             <span className="ml-auto shrink-0 num text-[10.5px] text-[var(--text-3)]">{ago(request.finishedAt || request.createdAt)}</span>
           </div>
           <DeliveryMeta request={request} />
+        </div>
+        <ChevronDown className={`mt-1 h-4 w-4 shrink-0 text-[var(--text-3)] transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
+        <div className="ml-8 mt-1">
           {body ? (
             <div className="mt-3 rounded-[9px] border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5">
               <p className={`whitespace-pre-wrap break-words text-[12.5px] leading-relaxed ${request.error ? "text-[var(--down)]" : "text-[var(--text-2)]"}`}>
@@ -125,7 +137,7 @@ function AnswerCard({ request }: { request: Req }) {
             </button>
           )}
         </div>
-      </div>
+      )}
     </Panel>
   );
 }

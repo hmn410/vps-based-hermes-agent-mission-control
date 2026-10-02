@@ -1,27 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, CalendarCheck, ChevronDown, ChevronUp, Cpu, ListTodo, Mail, ShieldCheck } from "lucide-react";
+import { CalendarCheck, ChevronDown, ChevronUp, Mail, ShieldCheck } from "lucide-react";
 import { HermesBriefing } from "@/components/hermes-briefing";
 import { ApprovalInbox } from "@/components/approval-inbox";
 import { GmailPanel } from "@/components/gmail-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
-
-const destinations = [
-  {
-    href: "/hermes",
-    title: "Dispatch terminal",
-    detail: "Send internal work to Hermes, review runs, and approve real-world changes.",
-    icon: Cpu,
-  },
-  {
-    href: "/tasks",
-    title: "Tasks",
-    detail: "Review active, blocked, and completed work from the Hermes board.",
-    icon: ListTodo,
-  },
-];
 
 export default function Dashboard() {
   const [showGmail, setShowGmail] = useState(true);
@@ -76,25 +60,6 @@ export default function Dashboard() {
           <div className={`h-[300px] ${showGmail ? "" : "lg:col-span-2"}`}>
             <ApprovalInbox compact className="h-full" />
           </div>
-        </div>
-      </section>
-
-      <section className="mt-9">
-        <div className="flex items-center gap-3 mb-3">
-          <span className="eyebrow">Start here</span>
-          <span className="h-px flex-1 bg-[var(--hq-hairline)]" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {destinations.map(({ href, title, detail, icon: Icon }) => (
-            <Link key={href} href={href} className="panel panel-interactive p-5 group">
-              <div className="flex items-start justify-between gap-4">
-                <Icon className="w-5 h-5 text-[var(--accent)]" />
-                <ArrowUpRight className="w-4 h-4 text-[var(--hq-text-ghost)] group-hover:text-[var(--hq-text)] transition-colors" />
-              </div>
-              <h2 className="mt-6 text-[15px] font-semibold text-[var(--hq-text)]">{title}</h2>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--hq-text-ghost)]">{detail}</p>
-            </Link>
-          ))}
         </div>
       </section>
 

@@ -23,7 +23,6 @@ import {
   Eyebrow,
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
-import { HermesRuns } from "@/components/hermes-runs";
 
 // ── Types ─────────────────────────────────────────────────
 type ReqStatus =
@@ -733,10 +732,6 @@ export default function HermesPage() {
           )}
         </section>
 
-        {/* Observability — runs & usage */}
-        <section className="mt-12">
-          <HermesRuns />
-        </section>
       </div>
     </>
   );
