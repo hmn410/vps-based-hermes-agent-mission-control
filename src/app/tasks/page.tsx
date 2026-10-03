@@ -13,6 +13,12 @@ import {
 } from "@/components/ui/kit";
 import { LiveOrchestrator } from "@/components/live-orchestrator";
 import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
+import {
+  actionErrorMessage,
+  markRemoved,
+  withoutPendingRemovals,
+  type PendingRemovals,
+} from "@/lib/task-actions";
 
 // ── Types ─────────────────────────────────────────────────
 interface KanbanTask {
@@ -174,35 +180,48 @@ function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => v
 }
 
 // ── Kanban task card ──────────────────────────────────────
+type TaskAction = "unblock" | "archive" | "complete";
+
 function TaskCard({
   task,
   onActed,
   onOpen,
 }: {
   task: KanbanTask;
-  onActed: () => void;
+  onActed: (taskId: string, action: TaskAction) => void;
   onOpen: (task: KanbanTask) => void;
 }) {
   const col = columnFor(task.status);
   const tone = columnTone(col);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Synchronous re-entrancy guard: `busy` state isn't visible to a second
+  // click that lands before React re-renders the disabled button.
+  const inFlight = useRef(false);
 
   const act = async (
     e: React.MouseEvent,
-    action: "unblock" | "archive" | "complete",
+    action: TaskAction,
     confirmMsg?: string,
   ) => {
     e.stopPropagation();
+    if (inFlight.current) return;
     if (confirmMsg && !window.confirm(confirmMsg)) return;
+    inFlight.current = true;
     setBusy(action);
+    setError(null);
     try {
-      const r = await fetch(`/api/hermes/tasks/${task.id}/action`, {
+      const r = await fetch(`/api/hermes/tasks/${encodeURIComponent(task.id)}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      if (r.ok) onActed();
+      if (r.ok) onActed(task.id, action);
+      else setError(await actionErrorMessage(r));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   };
@@ -273,6 +292,11 @@ function TaskCard({
           )}
         </div>
       )}
+      {error && (
+        <p role="alert" className="mt-2 text-[11px] text-[var(--down)] leading-snug break-words">
+          Action failed: {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -290,7 +314,7 @@ function KanbanBoard({
   total: number;
   lastSync: string | null;
   stale: boolean;
-  onActed: () => void;
+  onActed: (taskId: string, action: TaskAction) => void;
   onOpen: (task: KanbanTask) => void;
 }) {
   const groups: Record<string, KanbanTask[]> = {};
@@ -361,6 +385,8 @@ export default function TasksPage() {
   const [historyStale, setHistoryStale] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const lastTasks = useRef<KanbanTask[]>([]);
+  // Successfully archived ids that the lagging mirror may still return.
+  const pendingRemovals = useRef<PendingRemovals>(new Map());
 
   const load = useCallback(async () => {
     const tk = await getJSON<{
@@ -373,7 +399,7 @@ export default function TasksPage() {
     if (tk) {
       const snapshot = keepLastKnownSnapshot(lastTasks.current, tk.tasks ?? [], tk.confirmedEmpty === true);
       lastTasks.current = snapshot.items;
-      setTasks(snapshot.items);
+      setTasks(withoutPendingRemovals(snapshot.items, pendingRemovals.current));
       setHistoryStale(snapshot.stale);
       if (!snapshot.stale) {
         setTaskTotal(tk.total ?? tk.tasks?.length ?? 0);
@@ -389,6 +415,20 @@ export default function TasksPage() {
     const iv = setInterval(load, 6000);
     return () => clearInterval(iv);
   }, [load]);
+
+  const onActed = useCallback(
+    (taskId: string, action: TaskAction) => {
+      if (action === "archive") {
+        // Reflect the confirmed archive immediately; the bridge mirror
+        // catches up on its next sync and the pending entry then clears.
+        markRemoved(pendingRemovals.current, taskId);
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        setSelectedTaskId((sel) => (sel === taskId ? null : sel));
+      }
+      void load();
+    },
+    [load],
+  );
 
   const manualRefresh = async () => {
     setRefreshing(true);
@@ -477,7 +517,7 @@ export default function TasksPage() {
               total={taskTotal}
               lastSync={taskSync}
               stale={historyStale}
-              onActed={load}
+              onActed={onActed}
               onOpen={(t) => setSelectedTaskId(t.id)}
             />
           )}

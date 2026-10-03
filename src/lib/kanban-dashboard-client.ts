@@ -107,7 +107,7 @@ export async function kanbanTaskAction(id: string, action: KanbanTaskAction) {
     complete: "done",
     ready: "ready",
   };
-  return dashboardFetch(`/api/plugins/kanban/tasks/${id}`, {
+  return dashboardFetch(`/api/plugins/kanban/tasks/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: { status: statusByAction[action] },
   });
