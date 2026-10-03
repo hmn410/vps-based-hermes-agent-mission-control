@@ -549,8 +549,18 @@ async function mirrorTick() {
   try { await mirrorCrons(); } catch (e) { log("mirrorCrons err", e.message); }
   try { await mirrorKanban(); } catch (e) { log("mirrorKanban err", e.message); }
   try { await syncKanbanLinkedRequests(); } catch (e) { log("syncKanbanLinkedRequests err", e.message); }
-  try { await maybeDailyBrief(); } catch (e) { log("maybeDailyBrief err", e.message); }
+  // The brief is a long LLM call (minutes). Awaiting it here froze every
+  // mirror (kanban/health/crons/telemetry) after each bridge restart, so
+  // /tasks showed archived cards and "Execution telemetry unavailable or
+  // stale" until it returned. Run it detached, at most one at a time.
+  if (!briefInFlight) {
+    briefInFlight = true;
+    maybeDailyBrief()
+      .catch((e) => log("maybeDailyBrief err", e.message))
+      .finally(() => { briefInFlight = false; });
+  }
 }
+let briefInFlight = false;
 
 async function main() {
   log(`hermes-bridge up (HTTP mode) · api=${API_URL} · poll=${POLL_MS}ms · mirror=${MIRROR_MS}ms`);
