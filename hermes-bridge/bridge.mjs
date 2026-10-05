@@ -39,7 +39,8 @@ import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
 import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } from "./dashboard-client.mjs";
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
-import { readKanbanTaskRows } from "./kanban-reader.mjs";
+import { readKanbanTaskRows, readKanbanTaskEvents } from "./kanban-reader.mjs";
+import { deriveBlockState, needsBlockDetail } from "./block-state.mjs";
 import { enrichExecutionEventPayload } from "./execution-event.mjs";
 import { deriveAgentActivity, completedTaskCount } from "./agent-activity.mjs";
 import DatabaseConstructor from "better-sqlite3";
@@ -175,10 +176,32 @@ function readKanbanSnapshotTasks() {
   // never the live WAL database.
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
-    return readKanbanTaskRows(db);
+    const rows = readKanbanTaskRows(db);
+    for (const row of rows) {
+      row.block_state = needsBlockDetail(row) ? deriveBlockState(readKanbanTaskEvents(db, row.id)) : null;
+    }
+    return rows;
   } finally {
     db.close();
   }
+}
+
+// Current block reason/recurrence for parked tasks, from each task's FULL
+// canonical event list (GET /tasks/:id). The board listing has no events, and
+// `last_failure_error` is cleared by unblock — so without this a task that
+// re-blocks (Hermes routes the 2nd same-kind block to `triage` with
+// `block_loop_detected`) mirrored with no reason at all.
+async function attachBlockStates(rows) {
+  await Promise.all(
+    rows.filter(needsBlockDetail).map(async (t) => {
+      try {
+        const full = await kanbanGetTask(t.id);
+        t.block_state = deriveBlockState(Array.isArray(full?.events) ? full.events : []);
+      } catch (e) {
+        log("kanban block-state fetch err", t.id, e.message);
+      }
+    })
+  );
 }
 
 async function readKanbanTasks() {
@@ -211,6 +234,7 @@ async function readKanbanTasks() {
         }
       })
   );
+  await attachBlockStates(rows);
   return rows;
 }
 // Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
@@ -326,8 +350,9 @@ async function mirrorKanban() {
          (id, board, title, assignee, status, priority, result,
           "startedAt", "completedAt", "workerPid", "workerStartedAt",
           "lastHeartbeatAt", "currentRunId", "blockKind", "currentStepKey",
-          "lastFailureError", "updatedAt", "syncedAt")
-       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, $15, now(), now())
+          "lastFailureError", "blockReason", "blockEventKind", "blockedAt", "blockRecurrences", "blockCount",
+          "updatedAt", "syncedAt")
+       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, $15, $16,$17,$18,$19,$20, now(), now())
        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, assignee=EXCLUDED.assignee,
          status=EXCLUDED.status, priority=EXCLUDED.priority, result=EXCLUDED.result,
          "startedAt"=EXCLUDED."startedAt", "completedAt"=EXCLUDED."completedAt",
@@ -335,6 +360,9 @@ async function mirrorKanban() {
          "lastHeartbeatAt"=EXCLUDED."lastHeartbeatAt", "currentRunId"=EXCLUDED."currentRunId",
          "blockKind"=EXCLUDED."blockKind", "currentStepKey"=EXCLUDED."currentStepKey",
          "lastFailureError"=EXCLUDED."lastFailureError",
+         "blockReason"=EXCLUDED."blockReason", "blockEventKind"=EXCLUDED."blockEventKind",
+         "blockedAt"=EXCLUDED."blockedAt", "blockRecurrences"=EXCLUDED."blockRecurrences",
+         "blockCount"=EXCLUDED."blockCount",
          "updatedAt"=now(), "syncedAt"=now()`,
       [
         t.id, t.title, t.assignee, t.status, t.priority ?? 0,
@@ -346,6 +374,8 @@ async function mirrorKanban() {
         toDate(t.started_at), toDate(t.completed_at), t.worker_pid ?? null, t.worker_started_at ?? null,
         toDate(t.last_heartbeat_at), t.current_run_id ?? null, t.block_kind ?? null, t.current_step_key ?? null,
         t.last_failure_error ?? null,
+        t.block_state?.blockReason ?? null, t.block_state?.blockEventKind ?? null,
+        toDate(t.block_state?.blockedAt), Number(t.block_recurrences || 0), t.block_state?.blockCount ?? 0,
       ]
     );
   }
@@ -508,7 +538,7 @@ async function syncKanbanLinkedRequests() {
      WHERE "hermesTaskId" IS NOT NULL AND status NOT IN ('done','failed','rejected')`
   );
   for (const r of rows) {
-    const { rows: taskRows } = await q(`SELECT status, result FROM "HermesTask" WHERE id=$1`, [r.hermesTaskId]);
+    const { rows: taskRows } = await q(`SELECT status, result, "blockEventKind" FROM "HermesTask" WHERE id=$1`, [r.hermesTaskId]);
     const task = taskRows[0];
     if (!task) {
       // Genuinely missing from the mirror. Give the mirror a grace window
@@ -534,9 +564,10 @@ async function syncKanbanLinkedRequests() {
         `UPDATE "AgentRequest" SET status='done', result=$2, "finishedAt"=now(), "updatedAt"=now() WHERE id=$1`,
         [r.id, (task.result || "Task completed on the kanban board.").slice(0, 8000)]
       );
-    } else if (norm === "blocked") {
+    } else if (norm === "blocked" || (norm === "triage" && task.blockEventKind === "block_loop_detected")) {
       // Surface as a visible status on the website without hard-failing —
       // the task is still alive on the board and can be unblocked there.
+      // `triage` + block_loop_detected is Hermes' 2nd same-kind block.
       await q(`UPDATE "AgentRequest" SET status='running', "updatedAt"=now() WHERE id=$1`, [r.id]);
     }
     // else: still triage/todo/ready/running/review — leave AgentRequest as 'running'.

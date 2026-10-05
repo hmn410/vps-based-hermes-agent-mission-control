@@ -33,8 +33,13 @@ interface Req {
 interface BlockedTask {
   id: string;
   title: string;
+  status?: string;
   blockKind: string | null;
+  attentionKind?: string;
+  label?: string;
   reason: string | null;
+  recurrences?: number;
+  blockedAt?: string | null;
   updatedAt: string;
 }
 
@@ -253,14 +258,17 @@ function BlockedCard({
         <div className="flex items-center gap-2 flex-wrap">
           <Pill tone="down">
             <AlertTriangle className="w-3 h-3" />
-            Blocked task
+            {task.attentionKind === "repeat_block" ? "Blocked again" : "Blocked task"}
           </Pill>
-          {task.blockKind && (
-            <Pill tone="neutral">{BLOCK_KIND_LABEL[task.blockKind] || task.blockKind}</Pill>
+          {(task.label || task.blockKind) && (
+            <Pill tone="neutral">{task.label || BLOCK_KIND_LABEL[task.blockKind ?? ""] || task.blockKind}</Pill>
+          )}
+          {(task.recurrences ?? 0) >= 2 && task.attentionKind !== "repeat_block" && (
+            <Pill tone="neutral">{task.recurrences}× blocked</Pill>
           )}
         </div>
         <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">
-          {timeAgo(task.updatedAt)}
+          {timeAgo(task.blockedAt || task.updatedAt)}
         </span>
       </div>
 
@@ -344,9 +352,11 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <Eyebrow>Approval inbox</Eyebrow>
-        <Pill tone={totalCount > 0 ? "accent" : "neutral"}>
-          {totalCount} pending
-        </Pill>
+        <div className="flex items-center gap-1.5">
+          {requests.length > 0 && <Pill tone="warn">{requests.length} to approve</Pill>}
+          {blockedTasks.length > 0 && <Pill tone="down">{blockedTasks.length} blocked on you</Pill>}
+          {totalCount === 0 && <Pill tone="neutral">0 pending</Pill>}
+        </div>
       </div>
 
       {loaded && isEmpty ? (

@@ -400,6 +400,29 @@ function InboxCard({ req, onAction }: { req: Req; onAction: () => void }) {
 }
 
 
+// Kanban task parked on a human (blocked / repeat-blocked). Distinct from an
+// approval request: this work already started; the worker needs an answer.
+type BlockedOnYou = {
+  id: string; title: string; label?: string; attentionKind?: string;
+  reason: string | null; recurrences?: number; blockedAt?: string | null; updatedAt: string;
+};
+function BlockedOnYouCard({ task }: { task: BlockedOnYou }) {
+  return (
+    <Panel className="p-5" style={{ borderColor: "color-mix(in srgb, var(--down) 28%, transparent)" }}>
+      <div className="flex items-start justify-between gap-3 mb-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Pill tone="down">{task.attentionKind === "repeat_block" ? "Blocked again" : "Blocked on you"}</Pill>
+          {task.label && <Pill tone="neutral">{task.label}</Pill>}
+        </div>
+        <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">{timeAgo(task.blockedAt || task.updatedAt)}</span>
+      </div>
+      <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
+      {task.reason && <p className="mt-1.5 text-[13px] text-[var(--text-2)] leading-snug line-clamp-4 whitespace-pre-wrap">{task.reason}</p>}
+      <a href="/tasks" className="mt-3 inline-flex text-[12px] text-[var(--accent)]">Open on task board →</a>
+    </Panel>
+  );
+}
+
 // ── Cron / schedules ──────────────────────────────────────
 type CronJob = {
   id: string; status: string; name: string; schedule: string;
@@ -677,6 +700,7 @@ function ActivityFeed({ events }: { events: Ev[] }) {
 export default function HermesPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [inbox, setInbox] = useState<Req[]>([]);
+  const [blockedOnYou, setBlockedOnYou] = useState<BlockedOnYou[]>([]);
   const [pending, setPending] = useState(0);
   const [events, setEvents] = useState<Ev[]>([]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -687,7 +711,7 @@ export default function HermesPage() {
   const load = useCallback(async () => {
     const [h, reqs, act, cr] = await Promise.all([
       getJSON<Health>("/api/hermes/health"),
-      getJSON<{ requests: Req[]; pending: number }>(
+      getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedOnYou[] }>(
         "/api/hermes/requests?status=awaiting_approval&take=50"
       ),
       getJSON<{ events: Ev[] }>("/api/hermes/activity?take=30"),
@@ -696,6 +720,7 @@ export default function HermesPage() {
     if (h) setHealth(h);
     if (reqs) {
       setInbox(reqs.requests ?? []);
+      setBlockedOnYou(reqs.blockedTasks ?? []);
       setPending(reqs.pending ?? reqs.requests?.length ?? 0);
     }
     if (act) setEvents(act.events ?? []);
@@ -760,7 +785,7 @@ export default function HermesPage() {
         <section className="mt-12">
           <SectionHeader
             label="Approval inbox"
-            title="Awaiting approval"
+            title="Needs you: approvals and blocked tasks"
             action={
               pending > 0 ? (
                 <Pill tone="warn">{pending} pending</Pill>
@@ -774,7 +799,7 @@ export default function HermesPage() {
               <Skeleton className="h-40" />
               <Skeleton className="h-40" />
             </div>
-          ) : inbox.length === 0 ? (
+          ) : inbox.length === 0 && blockedOnYou.length === 0 ? (
             <p className="px-1 text-[12.5px] text-[var(--text-3)]">
               Clear — side-effecting dashboard requests appear here before Hermes acts on them.
             </p>
@@ -782,6 +807,9 @@ export default function HermesPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {inbox.map((req) => (
                 <InboxCard key={req.id} req={req} onAction={load} />
+              ))}
+              {blockedOnYou.map((task) => (
+                <BlockedOnYouCard key={task.id} task={task} />
               ))}
             </div>
           )}

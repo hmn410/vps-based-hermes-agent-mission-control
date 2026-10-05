@@ -19,6 +19,7 @@ import {
   withoutPendingRemovals,
   type PendingRemovals,
 } from "@/lib/task-actions";
+import { deriveTaskAttention } from "@/lib/task-attention";
 
 // ── Types ─────────────────────────────────────────────────
 interface KanbanTask {
@@ -29,6 +30,13 @@ interface KanbanTask {
   status: string;
   priority: number | null;
   result: string | null;
+  blockKind?: string | null;
+  blockReason?: string | null;
+  blockEventKind?: string | null;
+  blockRecurrences?: number | null;
+  blockCount?: number | null;
+  blockedAt?: string | null;
+  lastFailureError?: string | null;
   syncedAt: string;
 }
 
@@ -69,16 +77,8 @@ const COLUMN_ORDER = [
 ] as const;
 type Column = (typeof COLUMN_ORDER)[number];
 
-function normStatus(s: string): string {
-  return s.toLowerCase().replace(/[\s_-]+/g, "");
-}
-function columnFor(status: string): Column {
-  const k = normStatus(status);
-  for (const c of COLUMN_ORDER) if (k.includes(c)) return c;
-  if (k.includes("progress") || k.includes("doing")) return "running";
-  if (k.includes("complete")) return "done";
-  return "triage";
-}
+// Column placement is decided by deriveTaskAttention() (src/lib/task-attention):
+// a repeat block that Hermes parked in `triage` belongs in Blocked.
 type Tone = "neutral" | "up" | "down" | "warn" | "accent";
 function columnTone(col: Column): Tone {
   if (col === "done") return "up";
@@ -100,10 +100,33 @@ function toneVar(t: Tone): string {
   return t === "neutral" ? "var(--text-3)" : `var(--${t})`;
 }
 
+// ── Attention banner: current blocker reason + recurrence (shared model) ──
+function AttentionNote({ task, clamp }: { task: KanbanTask; clamp: boolean }) {
+  const a = deriveTaskAttention(task);
+  if (!a.needsYou && a.kind !== "dependency") return null;
+  return (
+    <div
+      className="mt-2.5 rounded-[8px] px-2.5 py-2 text-[11.5px] leading-snug"
+      style={{
+        color: a.needsYou ? "var(--down)" : "var(--text-3)",
+        background: a.needsYou ? "color-mix(in srgb, var(--down) 8%, transparent)" : "transparent",
+        border: `1px solid color-mix(in srgb, ${a.needsYou ? "var(--down)" : "var(--line)"} 30%, transparent)`,
+      }}
+      role={a.needsYou ? "status" : undefined}
+    >
+      <span className="font-semibold">{a.needsYou ? "Needs you · " : ""}{a.label}</span>
+      {a.recurrences >= 2 && a.kind !== "repeat_block" && <span> · blocked {a.recurrences}×</span>}
+      {a.reason && <p className={`mt-1 text-[var(--text-2)] whitespace-pre-wrap ${clamp ? "line-clamp-3" : ""}`}>{a.reason}</p>}
+      {task.blockedAt && <p className="mt-1 num text-[10.5px] text-[var(--text-4)]">since {timeAgo(task.blockedAt)}</p>}
+    </div>
+  );
+}
+
 // ── Task detail modal — full title + full result, no truncation ──
 function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => void }) {
-  const col = columnFor(task.status);
-  const tone = columnTone(col);
+  const attention = deriveTaskAttention(task);
+  const col = attention.column as Column;
+  const tone = attention.needsYou ? "down" : columnTone(col);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -135,13 +158,14 @@ function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => v
         <div className="flex items-start justify-between gap-3 p-4 border-b border-[var(--line)]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <Pill tone={tone}>{COLUMN_LABEL[col]}</Pill>
+              <Pill tone={tone}>{attention.needsYou ? attention.label : COLUMN_LABEL[col]}</Pill>
               {task.assignee && (
                 <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>
               )}
               <span className="num text-[10.5px] text-[var(--text-4)]">{task.id}</span>
             </div>
             <p className="mt-2 text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</p>
+            <AttentionNote task={task} clamp={false} />
           </div>
           <button
             type="button"
@@ -191,8 +215,9 @@ function TaskCard({
   onActed: (taskId: string, action: TaskAction) => void;
   onOpen: (task: KanbanTask) => void;
 }) {
-  const col = columnFor(task.status);
-  const tone = columnTone(col);
+  const attention = deriveTaskAttention(task);
+  const col = attention.column as Column;
+  const tone = attention.needsYou ? "down" : columnTone(col);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Synchronous re-entrancy guard: `busy` state isn't visible to a second
@@ -228,7 +253,9 @@ function TaskCard({
 
   // Only surface actions that make sense to clear up from here — this is a
   // shortcut for common cleanup, not a full kanban board replacement.
-  const showUnblock = col === "blocked";
+  // Unblock covers Hermes' loop-triaged repeat blocks too (status=triage), not
+  // just the literal `blocked` column — dashboard PATCH status=ready re-promotes.
+  const showUnblock = attention.canUnblock;
   const showComplete = col === "review" || col === "running";
   const showArchive = col === "done";
 
@@ -245,7 +272,7 @@ function TaskCard({
     >
       <p className="text-[13px] text-[var(--text)] leading-snug line-clamp-3">{task.title}</p>
       <div className="flex items-center gap-2 flex-wrap mt-2.5">
-        <Pill tone={tone}>{COLUMN_LABEL[col]}</Pill>
+        <Pill tone={tone}>{attention.needsYou ? attention.label : COLUMN_LABEL[col]}</Pill>
         {task.assignee && (
           <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>
         )}
@@ -253,6 +280,7 @@ function TaskCard({
           <span className="num text-[10.5px] text-[var(--text-3)] ml-auto">P{task.priority}</span>
         )}
       </div>
+      <AttentionNote task={task} clamp />
       {task.result && (
         <p className="mt-2.5 text-[11.5px] text-[var(--text-3)] leading-snug line-clamp-2 border-t border-[var(--line)] pt-2">
           {task.result}
@@ -319,7 +347,7 @@ function KanbanBoard({
 }) {
   const groups: Record<string, KanbanTask[]> = {};
   for (const t of tasks) {
-    const col = columnFor(t.status);
+    const col = deriveTaskAttention(t).column;
     (groups[col] ||= []).push(t);
   }
 
@@ -379,7 +407,6 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [taskTotal, setTaskTotal] = useState(0);
   const [taskSync, setTaskSync] = useState<string | null>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [historyStale, setHistoryStale] = useState(false);
@@ -404,7 +431,6 @@ export default function TasksPage() {
       if (!snapshot.stale) {
         setTaskTotal(tk.total ?? tk.tasks?.length ?? 0);
         setTaskSync(tk.lastSync ?? null);
-        setCounts(tk.counts ?? {});
       }
     }
     setLoaded(true);
@@ -437,13 +463,12 @@ export default function TasksPage() {
   };
 
   // Kanban lifecycle counts (not the dispatch/approval bus — that's on /hermes).
-  const countFor = (col: Column) =>
-    Object.entries(counts).reduce(
-      (sum, [status, n]) => (columnFor(status) === col ? sum + n : sum),
-      0
-    );
+  // Header counts come from the same attention projection as the board, so a
+  // loop-triaged repeat block counts as Blocked (not Triage) everywhere.
+  const countFor = (col: Column) => tasks.filter((t) => deriveTaskAttention(t).column === col).length;
   const running = countFor("running");
   const blocked = countFor("blocked");
+  const needsYou = tasks.filter((t) => deriveTaskAttention(t).needsYou).length;
   const review = countFor("review");
   const done = countFor("done");
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null;
@@ -475,7 +500,7 @@ export default function TasksPage() {
               {blocked > 0 && (
                 <div>
                   <div className="num text-[20px] font-semibold leading-none" style={{ color: "var(--down)" }}>{blocked}</div>
-                  <div className="eyebrow mt-1.5">Blocked</div>
+                  <div className="eyebrow mt-1.5">Blocked{needsYou > 0 ? ` · ${needsYou} need you` : ""}</div>
                 </div>
               )}
               <div>

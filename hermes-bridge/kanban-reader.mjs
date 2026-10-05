@@ -2,7 +2,7 @@ export function readKanbanTaskRows(db, limit = 200) {
   return db.prepare(
     `SELECT tasks.id, title, status, assignee, priority, result,
             started_at, completed_at, worker_pid, worker_started_at,
-            last_heartbeat_at, current_run_id, block_kind, current_step_key,
+            last_heartbeat_at, current_run_id, block_kind, block_recurrences, current_step_key,
             COALESCE(
               last_failure_error,
               (SELECT payload FROM task_events
@@ -33,4 +33,15 @@ export function readKanbanTaskRows(db, limit = 200) {
        id ASC
      LIMIT ?`
   ).all(limit);
+}
+
+// One task's complete lifecycle event history (oldest first). Used to derive
+// the CURRENT block reason/recurrence independently of the bounded global
+// event feed, which drops older block events for long-lived tasks.
+export function readKanbanTaskEvents(db, taskId) {
+  return db.prepare(
+    `SELECT id, kind, payload, created_at FROM task_events
+     WHERE task_id = ? AND kind != 'heartbeat'
+     ORDER BY id ASC`
+  ).all(taskId);
 }

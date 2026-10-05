@@ -10,7 +10,7 @@ test("finds a task's completed-event summary even when it is outside the live ev
     CREATE TABLE tasks (
       id TEXT PRIMARY KEY, title TEXT, status TEXT, assignee TEXT, priority INTEGER, result TEXT,
       started_at INTEGER, completed_at INTEGER, worker_pid INTEGER, worker_started_at TEXT,
-      last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, current_step_key TEXT,
+      last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, block_recurrences INTEGER DEFAULT 0, current_step_key TEXT,
       last_failure_error TEXT
     );
     CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, summary TEXT, ended_at INTEGER);
@@ -36,7 +36,7 @@ test("excludes archived cards and keeps completed history in a stable newest-fir
     CREATE TABLE tasks (
       id TEXT PRIMARY KEY, title TEXT, status TEXT, assignee TEXT, priority INTEGER, result TEXT,
       started_at INTEGER, completed_at INTEGER, worker_pid INTEGER, worker_started_at TEXT,
-      last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, current_step_key TEXT,
+      last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, block_recurrences INTEGER DEFAULT 0, current_step_key TEXT,
       last_failure_error TEXT
     );
     CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, summary TEXT, ended_at INTEGER);

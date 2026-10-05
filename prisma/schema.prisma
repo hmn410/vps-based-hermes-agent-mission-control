@@ -201,6 +201,14 @@ model HermesTask {
   blockKind       String?
   currentStepKey  String?
   lastFailureError String? @db.Text
+  // Current block, derived by hermes-bridge from the task's FULL canonical
+  // event history (not the truncated global HermesTaskEvent mirror). Null when
+  // the task is not currently parked on a block.
+  blockReason      String?   @db.Text
+  blockEventKind   String?   // blocked | block_loop_detected | gave_up | dependency_wait
+  blockedAt        DateTime?
+  blockRecurrences Int       @default(0) // Hermes same-kind re-block counter (survives unblock)
+  blockCount       Int       @default(0) // total block occurrences in the task's history
   updatedAt       DateTime  @default(now())
   syncedAt        DateTime  @updatedAt
 

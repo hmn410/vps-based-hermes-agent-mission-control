@@ -209,7 +209,29 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
         return;
       }
       const pr = await fetch(`/api/agent-chat?id=${requestId}`);
-      const pd = await pr.json() as { status: string; result?: string; error?: string };
+      const pd = await pr.json() as { status: string; result?: string; error?: string; lifecycle?: { label?: string; blockerReason?: string | null } };
+      if (pd.status === "blocked") {
+        // The worker is parked waiting on a human (incl. a repeat block). Say so
+        // instead of silently polling until the 4-minute timeout.
+        setMsgs((cur) => {
+          const label = pd.lifecycle?.label || "Blocked";
+          const reason = pd.lifecycle?.blockerReason || pd.error || "Waiting for your input.";
+          const next = [...cur, { role: "assistant" as const, content: `${label} — needs you: ${reason}\n\nAnswer or unblock it from the Tasks board or the approval inbox.` }];
+          saveStoredChat(agent.id, { msgs: next });
+          return next;
+        });
+        setLoading(false);
+        return;
+      }
+      if (pd.status === "awaiting_approval") {
+        setMsgs((cur) => {
+          const next = [...cur, { role: "assistant" as const, content: "This request needs your approval before I can work on it — check the approval inbox on the Hermes tab." }];
+          saveStoredChat(agent.id, { msgs: next });
+          return next;
+        });
+        setLoading(false);
+        return;
+      }
       if (pd.status === "done") {
         setMsgs((cur) => {
           const next = [...cur, { role: "assistant" as const, content: pd.result || "(no reply)" }];

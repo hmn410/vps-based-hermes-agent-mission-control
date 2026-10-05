@@ -51,7 +51,7 @@ const TONE: Record<string, "neutral" | "up" | "down" | "warn" | "accent"> = {
   approved: "accent",
   running: "accent",
   review: "accent",
-  blocked: "warn",
+  blocked: "down",
   done: "up",
   failed: "down",
   rejected: "neutral",
@@ -174,7 +174,7 @@ function ActiveCard({ request }: { request: Req }) {
             <p className="mt-2 text-[12px] text-[var(--warn)]">Dispatcher attention: this task has waited over 2 minutes without a claim.</p>
           )}
           {request.status === "blocked" && (
-            <p className="mt-2 text-[12px] text-[var(--warn)]">Blocked: {lifecycle?.blockerReason || request.error || "Waiting for input"}</p>
+            <p className="mt-2 text-[12px] text-[var(--down)]">Needs you: {lifecycle?.blockerReason || request.error || "Waiting for input"} <a href="/tasks" className="text-[var(--accent)]">Open task →</a></p>
           )}
         </div>
         <Pill tone={tone}>{lifecycle?.label || LABEL[request.status] || request.status}</Pill>
