@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Mail, ShieldCheck } from "lucide-react";
 import { HermesBriefing } from "@/components/hermes-briefing";
 import { ApprovalInbox } from "@/components/approval-inbox";
 import { GmailPanel, type GmailConnection } from "@/components/gmail-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
 import { homePrivacyLine } from "@/lib/gmail-overview";
 
+// Layout: what needs Josh first (Approval Inbox + Chief of Staff), then
+// Calendar (a one-line connect prompt until connected), Gmail last and
+// collapsed by default. The approval policy lives in the inbox header's info
+// tooltip. System health lives once, in the sidebar footer.
 export default function Dashboard() {
   // Driven by what the Gmail panel actually holds, so the subtitle never
-  // claims a connection state that isn't true. System health lives once, in
-  // the sidebar footer.
+  // claims a connection state that isn't true.
   const [gmail, setGmail] = useState<GmailConnection>("loading");
 
   return (
@@ -26,33 +28,20 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-stretch">
-        <HermesBriefing className="xl:col-span-2 min-h-[420px]" />
-        <CalendarPanel className="min-h-[420px]" />
+      <section className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-stretch">
+        <div className="xl:col-span-2 min-h-[420px] xl:h-[520px]">
+          <ApprovalInbox compact className="h-full" />
+        </div>
+        <HermesBriefing className="xl:col-span-3 min-h-[420px]" />
       </section>
 
       <section className="mt-9">
-        <div className="flex flex-wrap items-center gap-3 mb-3">
-          <Mail className="w-4 h-4 shrink-0 text-[var(--accent)]" />
-          <span className="eyebrow">Gmail &amp; Approvals</span>
-          <span className="h-px w-12 sm:w-24 bg-[var(--hq-hairline)]" />
-          <span className="text-[12px] text-[var(--hq-text-ghost)]">Inbox and pending sign-offs</span>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
-          <div id="gmail-area" className="h-[300px]">
-            <GmailPanel className="h-full" onConnection={setGmail} />
-          </div>
-          <div className="h-[300px]">
-            <ApprovalInbox compact className="h-full" />
-          </div>
-        </div>
+        <CalendarPanel className="min-h-0 max-h-[360px]" />
       </section>
 
       <section className="mt-9">
-        <div className="panel p-5">
-          <div className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-[var(--warn)]" /><span className="eyebrow">Approval boundary</span></div>
-          <p className="mt-3 text-[13px] leading-relaxed text-[var(--hq-text-dim)]">Drafting, research, task updates, and wiki edits can run internally. Sending email, calendar changes, publishing, and other active changes wait in the Approval Inbox.</p>
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-[var(--hq-text-ghost)]"><Mail className="w-3.5 h-3.5" /> Gmail send/reply/labels and Calendar create/edit/delete require your approval.</div>
+        <div id="gmail-area">
+          <GmailPanel onConnection={setGmail} />
         </div>
       </section>
     </div>

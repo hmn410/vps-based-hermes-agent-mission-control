@@ -116,7 +116,7 @@ export function CommandPalette() {
         return;
       }
       // dispatch: confirm briefly, then jump to the Hermes page so you can
-      // watch it run in the Dispatches panel.
+      // watch it run under In flight.
       setDispatched(true);
       await runDispatch(row.query);
       setTimeout(() => { setOpen(false); router.push("/hermes"); }, 650);

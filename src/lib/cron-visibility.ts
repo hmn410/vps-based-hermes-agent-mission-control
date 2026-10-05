@@ -4,8 +4,8 @@
    opts in with "Show system & hidden jobs", and are always read-only here:
 
    - "system": plumbing that keeps HQ itself working (kanban mirror snapshots,
-     digests delivered locally). Pausing one from the UI would break Tasks /
-     Live Work, so it is never actionable from HQ.
+     digests delivered locally). Pausing one from the UI would break
+     the Tasks page, so it is never actionable from HQ.
    - "work": jobs about employer work. HQ never connects employer accounts and
      should not surface or drive employer work, so these are hidden too. */
 

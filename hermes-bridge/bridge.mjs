@@ -36,6 +36,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { formatHermesCommandError } from "./command.mjs";
 import { claimRequest } from "./queue.mjs";
+import { requestAssignee } from "./request-routing.mjs";
 import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } from "./dashboard-client.mjs";
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows, readKanbanTaskEvents } from "./kanban-reader.mjs";
@@ -558,7 +559,7 @@ async function runRequest(r) {
           "Do NOT text Josh a completion confirmation — he watches this dashboard live and will see the result here. Do not run `hermes send` for routine completion.",
           "The ONLY exception: if you have to call kanban_block (needs_input/capability/transient — a genuine blocker only you can't resolve without him), a separate digest job will text him about it automatically within a few minutes. You do not need to text him yourself for that either — just block normally with a clear reason.",
         ].join("\n"),
-        assignee: r.assignee || "default", // route to the right Hermes profile
+        assignee: requestAssignee(r),      // composer-selected Hermes profile (validated)
         triage: false,                      // skip triage hop — dispatch straight to that
       });
       // Hand off to the kanban lifecycle — leave status as 'running' so it

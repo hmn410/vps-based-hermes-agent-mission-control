@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 import { Menu, X, LogOut } from "lucide-react";
 import { NAV_GROUPS, MOBILE_NAV_ITEMS } from "@/components/nav-config";
 import { useSystemStatus } from "@/hooks/use-system-status";
+import { Logo } from "@/components/logo";
 
 const STATUS_COLOR = { up: "var(--up)", warn: "var(--warn)", down: "var(--down)" } as const;
 
@@ -28,17 +29,6 @@ function SystemStatusLine() {
         <span className="relative inline-flex w-1.5 h-1.5 rounded-full" style={{ background: color }} />
       </span>
       <span style={status.level === "up" ? undefined : { color }}>{status.text}</span>
-    </div>
-  );
-}
-
-function Logo() {
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className="w-8 h-8 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--surface-1)] flex items-center justify-center">
-        <span className="text-[var(--accent)] font-mono font-bold text-[13px] tracking-tight">&gt;_</span>
-      </div>
-      <span className="font-mono text-[var(--text)] tracking-[-0.01em] text-[15px] uppercase">Hermy<span className="text-[var(--accent)]">HQ</span></span>
     </div>
   );
 }

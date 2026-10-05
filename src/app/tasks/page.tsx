@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, LayoutGrid, Unlock, Check, Archive, X, Copy, ClipboardCheck } from "lucide-react";
 import {
   Panel,
@@ -12,6 +13,8 @@ import {
   rise,
 } from "@/components/ui/kit";
 import { LiveOrchestrator } from "@/components/live-orchestrator";
+import { ActivityEvents } from "@/components/activity-feed";
+import { navLabel } from "@/components/nav-config";
 import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
 import {
   actionErrorMessage,
@@ -364,7 +367,7 @@ function KanbanBoard({
   return (
     <>
       <SectionHeader
-        label="History"
+        label="Board"
         title="Every task, by lifecycle column"
         action={
           <div className="flex items-center gap-3">
@@ -410,22 +413,45 @@ function KanbanBoard({
 }
 
 // ── Main ──────────────────────────────────────────────────
-// This page is the orchestrator's own status view — live activity, then
-// history. Dispatching new work and the AgentRequest approval queue live
-// on /hermes; this page never touches that bus, only the kanban lifecycle.
+// One page, three tabs: Live (active task cards), Board (kanban lifecycle),
+// History (execution feed + Hermes activity events). /live-work redirects
+// to ?tab=live. Deep links /tasks?task=<id> (approval inbox, follow-ups)
+// open the task's detail modal on whichever tab is showing.
+type Tab = "live" | "board" | "history";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "live", label: "Live" },
+  { key: "board", label: "Board" },
+  { key: "history", label: "History" },
+];
+function parseTab(value: string | null): Tab | null {
+  return value === "live" || value === "board" || value === "history" ? value : null;
+}
+
 export default function TasksPage() {
+  return (
+    <Suspense fallback={null}>
+      <TasksView />
+    </Suspense>
+  );
+}
+
+function TasksView() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const explicitTab = parseTab(searchParams.get("tab"));
+  const deepLinkTask = searchParams.get("task");
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [taskTotal, setTaskTotal] = useState(0);
   const [taskSync, setTaskSync] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [historyStale, setHistoryStale] = useState(false);
-  // Deep link from the approval inbox / follow-up queue: /tasks?task=<id>
-  // opens that task's detail modal. Lazy init (no effect): the modal only
-  // renders once tasks load client-side, so SSR (null) can't mismatch.
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("task"),
-  );
+  // Default tab when the URL doesn't name one: Live if anything is running at
+  // first load, otherwise Board (also Board for a ?task= deep link). Decided
+  // once so the tab never switches under the user as tasks finish.
+  const [autoTab, setAutoTab] = useState<Tab | null>(deepLinkTask ? "board" : null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(deepLinkTask);
   const lastTasks = useRef<KanbanTask[]>([]);
   // Successfully archived ids that the lagging mirror may still return.
   const pendingRemovals = useRef<PendingRemovals>(new Map());
@@ -448,14 +474,33 @@ export default function TasksPage() {
         setTaskSync(tk.lastSync ?? null);
       }
     }
+    const anyRunning = (tk?.tasks ?? []).some((t) => deriveTaskAttention(t).column === "running");
+    setAutoTab((cur) => cur ?? (anyRunning ? "live" : "board"));
     setLoaded(true);
   }, []);
 
   useEffect(() => {
-    load();
+    const first = setTimeout(load, 0);
     const iv = setInterval(load, 6000);
-    return () => clearInterval(iv);
+    return () => { clearTimeout(first); clearInterval(iv); };
   }, [load]);
+
+  const tab: Tab | null = explicitTab ?? autoTab;
+  const selectTab = (next: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next);
+    params.delete("task");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+  const closeTask = () => {
+    setSelectedTaskId(null);
+    if (searchParams.get("task")) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("task");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }
+  };
 
   const onActed = useCallback(
     (taskId: string, action: TaskAction) => {
@@ -492,14 +537,14 @@ export default function TasksPage() {
     <>
       <div className="relative z-10 w-full mx-auto pt-4 pb-16">
         {/* Header */}
-        <div className="hq-rise flex flex-wrap items-end justify-between gap-4 mb-8" style={rise(0)}>
+        <div className="hq-rise flex flex-wrap items-end justify-between gap-4 mb-6" style={rise(0)}>
           <div>
             <Eyebrow>Kanban board · from Hermes</Eyebrow>
             <h1 className="mt-2.5 text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
-              Tasks
+              {navLabel("/tasks")}
             </h1>
             <p className="text-[13px] text-[var(--text-3)] mt-3">
-              What the orchestrator is doing right now, and the full lifecycle history below.
+              Live work as it runs, the full lifecycle board, and the execution history.
             </p>
           </div>
           <div className="flex items-center gap-6">
@@ -534,38 +579,75 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* Live — the orchestrator's current activity, updates every few seconds */}
-        <div className="hq-rise mb-12" style={rise(1)}>
-          <LiveOrchestrator />
+        {/* Tabs */}
+        <div role="tablist" aria-label="Tasks views" className="hq-rise mb-8 flex items-center gap-1.5 border-b border-[var(--line)]" style={rise(1)}>
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => selectTab(t.key)}
+                className={`-mb-px px-3.5 py-2 text-[12.5px] font-medium border-b-2 transition-colors ${
+                  active
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-3)] hover:text-[var(--text-2)]"
+                }`}
+              >
+                {t.label}
+                {t.key === "live" && running > 0 && (
+                  <span className="ml-1.5 num text-[10.5px]" style={{ color: "var(--accent)" }}>{running}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* History — the full kanban lifecycle board, below the live view */}
-        <section>
-          {!loaded ? (
-            <>
-              <SectionHeader label="History" title="Every task, by lifecycle column" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Skeleton className="h-48" />
-                <Skeleton className="h-48" />
-                <Skeleton className="h-48" />
-                <Skeleton className="h-48" />
-              </div>
-            </>
-          ) : (
-            <KanbanBoard
-              tasks={tasks}
-              total={taskTotal}
-              lastSync={taskSync}
-              stale={historyStale}
-              onActed={onActed}
-              onOpen={(t) => setSelectedTaskId(t.id)}
-            />
-          )}
-        </section>
+        {tab === null && <Skeleton className="h-48" />}
+
+        {tab === "live" && (
+          <section role="tabpanel">
+            <LiveOrchestrator mode="live" />
+          </section>
+        )}
+
+        {tab === "board" && (
+          <section role="tabpanel">
+            {!loaded ? (
+              <>
+                <SectionHeader label="Board" title="Every task, by lifecycle column" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Skeleton className="h-48" />
+                  <Skeleton className="h-48" />
+                  <Skeleton className="h-48" />
+                  <Skeleton className="h-48" />
+                </div>
+              </>
+            ) : (
+              <KanbanBoard
+                tasks={tasks}
+                total={taskTotal}
+                lastSync={taskSync}
+                stale={historyStale}
+                onActed={onActed}
+                onOpen={(t) => setSelectedTaskId(t.id)}
+              />
+            )}
+          </section>
+        )}
+
+        {tab === "history" && (
+          <section role="tabpanel" className="flex flex-col gap-12">
+            <LiveOrchestrator mode="history" />
+            <div>
+              <ActivityEvents />
+            </div>
+          </section>
+        )}
       </div>
-      {selectedTask && (
-        <TaskDetailModal task={selectedTask} onClose={() => setSelectedTaskId(null)} />
-      )}
+      {selectedTask && <TaskDetailModal task={selectedTask} onClose={closeTask} />}
     </>
   );
 }

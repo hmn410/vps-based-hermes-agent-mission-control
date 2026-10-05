@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Clock, Lightbulb, Check, X, Pencil, Trash2, RotateCcw, CheckCircle2, Play } from "lucide-react";
+import { Plus, Clock, Lightbulb, X, Pencil, Trash2, RotateCcw, Send, ArrowUpRight, Eye } from "lucide-react";
+import { ideaDisplayStatus, sendBlocker, type IdeaDisplayStatus } from "@/lib/idea-status";
 import { Panel, Pill, Button, Skeleton, EmptyState, rise } from "@/components/ui/kit";
 
 interface Idea {
@@ -15,17 +16,18 @@ interface Idea {
   createdAt?: string;
   timestamp?: string;
   rejectionReason?: string;
+  kanbanTaskId?: string | null;
 }
 
 type Tone = "neutral" | "up" | "down" | "warn" | "accent";
 
-const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
-  new:           { label: "New",         tone: "accent" },
-  considering:   { label: "Considering", tone: "warn" },
-  approved:      { label: "Approved",    tone: "up" },
-  "in-progress": { label: "In Progress", tone: "accent" },
-  done:          { label: "Done",        tone: "up" },
-  rejected:      { label: "Rejected",    tone: "down" },
+// Backlog statuses + "Sent" (has a linked kanban task). Legacy approved /
+// in-progress / done rows are mapped by ideaDisplayStatus (no DB migration).
+const STATUS_CONFIG: Record<IdeaDisplayStatus, { label: string; tone: Tone }> = {
+  new:         { label: "New",         tone: "accent" },
+  considering: { label: "Considering", tone: "warn" },
+  sent:        { label: "Sent",        tone: "up" },
+  rejected:    { label: "Rejected",    tone: "down" },
 };
 const CATEGORY_CONFIG: Record<string, { label: string }> = {
   build:      { label: "Build" },
@@ -59,13 +61,13 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   const [edit, setEdit] = useState({ title: idea.title, description: idea.description, category: idea.category || "build" });
   const [busy, setBusy] = useState(false);
 
-  const status = idea.status || "new";
-  const statusConf = STATUS_CONFIG[status] || STATUS_CONFIG.new;
+  const status = ideaDisplayStatus(idea);
+  const statusConf = STATUS_CONFIG[status];
   const catConf = CATEGORY_CONFIG[idea.category] || { label: idea.category || "other" };
   const date = idea.createdAt || idea.timestamp || "";
-  const isDead = status === "rejected" || status === "done";
-  const isApproved = status === "approved";
-  const isInProgress = status === "in-progress";
+  const isDead = status === "rejected";
+  const isSent = status === "sent";
+  const blocker = sendBlocker(idea);
 
   const updateIdea = async (updates: Partial<Idea>) => {
     setBusy(true);
@@ -78,6 +80,23 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         window.alert(body.error || "Couldn't update this idea.");
+        return;
+      }
+      onUpdate();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendToHermes = async () => {
+    if (blocker) { window.alert(blocker); return; }
+    if (!window.confirm(`Send "${idea.title}" to Hermes? This creates a kanban task.`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ideas/${encodeURIComponent(idea.id)}/send`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        window.alert(body.error || "Couldn't send this idea to Hermes.");
         return;
       }
       onUpdate();
@@ -164,7 +183,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
   return (
     <Panel
       className={`p-5 ${isDead ? "opacity-55 hover:opacity-80 transition-opacity" : ""}`}
-      style={isApproved ? { borderColor: "color-mix(in srgb, var(--up) 28%, transparent)" } : undefined}
+      style={isSent ? { borderColor: "color-mix(in srgb, var(--up) 28%, transparent)" } : undefined}
     >
       {/* Top row */}
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -213,17 +232,39 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
       {/* Actions */}
       {!isRejecting && (
         <div className="flex items-center gap-2 flex-wrap">
-          {!isDead && !isApproved && !isInProgress && (
+          {isSent && idea.kanbanTaskId && (
+            <a
+              href={`/tasks?task=${encodeURIComponent(idea.kanbanTaskId)}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors"
+              style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+            >
+              Sent <ArrowUpRight className="w-3 h-3" /> <span className="num">{idea.kanbanTaskId}</span>
+            </a>
+          )}
+
+          {(status === "new" || status === "considering") && (
             <>
               <button
-                onClick={() => updateIdea({ status: "approved" })}
+                onClick={sendToHermes}
                 disabled={busy}
+                title={blocker ?? "Create a kanban task for this idea"}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
-                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
+                style={{ color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 24%, transparent)" }}
               >
-                <Check className="w-3 h-3" />
-                Approve
+                <Send className="w-3 h-3" />
+                Send to Hermes
               </button>
+              {status === "new" && (
+                <button
+                  onClick={() => updateIdea({ status: "considering" })}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
+                  style={{ color: "var(--warn)", borderColor: "color-mix(in srgb, var(--warn) 24%, transparent)" }}
+                >
+                  <Eye className="w-3 h-3" />
+                  Consider
+                </button>
+              )}
               <button
                 onClick={() => setIsRejecting(true)}
                 disabled={busy}
@@ -232,67 +273,6 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
               >
                 <X className="w-3 h-3" />
                 Reject
-              </button>
-            </>
-          )}
-
-          {isApproved && (
-            <>
-              <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--up)" }}>
-                <Check className="w-3 h-3" />
-                Approved
-              </span>
-              <button
-                onClick={() => updateIdea({ status: "in-progress" })}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
-                style={{ color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 24%, transparent)" }}
-              >
-                <Play className="w-3 h-3" />
-                Start
-              </button>
-              <button
-                onClick={() => updateIdea({ status: "done" })}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
-                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                Mark Done
-              </button>
-              <button
-                onClick={() => updateIdea({ status: "considering" })}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Revert
-              </button>
-            </>
-          )}
-
-          {isInProgress && (
-            <>
-              <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--accent)" }}>
-                <Play className="w-3 h-3" />
-                In Progress
-              </span>
-              <button
-                onClick={() => updateIdea({ status: "done" })}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40"
-                style={{ color: "var(--up)", borderColor: "color-mix(in srgb, var(--up) 24%, transparent)" }}
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                Mark Done
-              </button>
-              <button
-                onClick={() => updateIdea({ status: "approved" })}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors disabled:opacity-40 text-[var(--text-3)] border-[var(--line)] hover:text-[var(--text)] hover:border-[var(--line-strong)]"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Back to Approved
               </button>
             </>
           )}
@@ -406,8 +386,8 @@ export default function IdeasPage() {
   });
 
   const filtered = sorted.filter((idea) => {
-    const s = idea.status || "new";
-    if (statusFilter === "active" && (s === "rejected" || s === "done")) return false;
+    const s = ideaDisplayStatus(idea);
+    if (statusFilter === "active" && (s === "rejected" || s === "sent")) return false;
     if (statusFilter !== "active" && statusFilter !== "all" && s !== statusFilter) return false;
     if (categoryFilter !== "all" && (idea.category || "") !== categoryFilter) return false;
     return true;
@@ -415,12 +395,14 @@ export default function IdeasPage() {
 
   const uniqueCategories = [...new Set(ideas.map(i => i.category).filter(Boolean))];
 
+  const countOf = (st: IdeaDisplayStatus) => ideas.filter((i) => ideaDisplayStatus(i) === st).length;
   const statusTabs = [
-    { key: "active", label: "Active", count: ideas.filter(i => !["rejected","done"].includes(i.status)).length },
+    { key: "active", label: "Backlog", count: countOf("new") + countOf("considering") },
+    { key: "new", label: "New", count: countOf("new") },
+    { key: "considering", label: "Considering", count: countOf("considering") },
+    { key: "sent", label: "Sent", count: countOf("sent") },
+    { key: "rejected", label: "Rejected", count: countOf("rejected") },
     { key: "all", label: "All", count: ideas.length },
-    { key: "approved", label: "Approved", count: ideas.filter(i => i.status === "approved").length },
-    { key: "done", label: "Done", count: ideas.filter(i => i.status === "done").length },
-    { key: "rejected", label: "Rejected", count: ideas.filter(i => i.status === "rejected").length },
   ];
 
   if (loading) {

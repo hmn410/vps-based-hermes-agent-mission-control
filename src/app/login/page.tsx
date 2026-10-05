@@ -1,5 +1,6 @@
 "use client";
 import { signIn } from "next-auth/react";
+import { Logo } from "@/components/logo";
 
 export default function LoginPage() {
   return (
@@ -7,13 +8,10 @@ export default function LoginPage() {
       <div className="hq-ambient" aria-hidden />
       <div className="relative z-10 panel hq-rise w-full max-w-sm p-8">
         <div className="flex flex-col items-center text-center">
-          <div className="w-11 h-11 rounded-[var(--r-md)] bg-white flex items-center justify-center text-[19px] font-bold text-[#0a0b0d]">
-            M
-          </div>
-          <h1 className="mt-5 text-[20px] font-semibold tracking-[-0.015em] text-[var(--text)]">
-            Hermy HQ
+          <h1 aria-label="Hermy HQ">
+            <Logo size="lg" />
           </h1>
-          <p className="eyebrow mt-2">Sign in to continue</p>
+          <p className="eyebrow mt-4">Sign in to continue</p>
         </div>
 
         <div className="rule my-7" />

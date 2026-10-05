@@ -23,7 +23,7 @@ export interface SystemStatus {
 
 /** The bridge writes health every mirror tick (seconds). Silence beyond this means the bridge is down. */
 export const BRIDGE_SILENT_MS = 2 * 60_000;
-/** Kanban telemetry older than this makes Tasks / Live Work stale. */
+/** Kanban telemetry older than this makes the Tasks page stale. */
 export const MIRROR_STALE_MS = 60_000;
 
 export function formatAge(ms: number): string {

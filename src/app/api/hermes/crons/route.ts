@@ -75,7 +75,7 @@ export async function POST(req: Request) {
   if (!["create", "pause", "resume", "run", "remove", "edit"].includes(op))
     return NextResponse.json({ error: "bad op" }, { status: 400 });
   // System and work jobs are read-only from HQ (pausing the kanban mirror
-  // snapshot would break Tasks/Live Work; work jobs are not driven from HQ).
+  // snapshot would break the Tasks page; work jobs are not driven from HQ).
   if (op !== "create") {
     const { jobs } = await loadJobs();
     const target = jobs.find((j) => (b.id && j.id === b.id) || (!b.id && b.name && j.name === b.name));

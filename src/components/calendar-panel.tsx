@@ -46,7 +46,27 @@ export function CalendarPanel({ className = "" }: { className?: string }) {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const first = setTimeout(load, 0);
+    return () => clearTimeout(first);
+  }, [load]);
+
+  // Not connected: a one-line connect prompt instead of an empty panel.
+  if (!connected) {
+    return (
+      <div
+        className={`panel flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[12.5px] ${className}`}
+        data-testid="calendar-connect"
+      >
+        <CalendarCheck className="w-4 h-4 shrink-0 text-[var(--text-3)]" />
+        <span className="text-[var(--text-2)]">Calendar isn&apos;t connected.</span>
+        <span className="text-[var(--text-3)]">Sign out and back in to grant Calendar access.</span>
+        <button onClick={load} className="btn-ghost ml-auto p-1.5 rounded-full" aria-label="Check again">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Panel className={`flex flex-col overflow-hidden p-6 ${className}`}>
@@ -60,9 +80,7 @@ export function CalendarPanel({ className = "" }: { className?: string }) {
         </button>
       </div>
 
-      {!connected ? (
-        <EmptyState icon={<CalendarCheck className="w-5 h-5" />} title="Calendar is not connected" hint="Sign out and back in to grant Calendar access." />
-      ) : events === null ? (
+      {events === null ? (
         <div className="sk h-20 rounded-[10px]" />
       ) : events.length === 0 ? (
         <EmptyState icon={<CalendarCheck className="w-5 h-5" />} title="Nothing scheduled" hint="No events in the next 7 days." />

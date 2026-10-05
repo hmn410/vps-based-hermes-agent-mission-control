@@ -8,7 +8,7 @@
    ─────────────────────────────────────────────────────────── */
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, X, Pencil, Inbox, Unlock, AlertTriangle } from "lucide-react";
+import { Check, X, Pencil, Inbox, Unlock, AlertTriangle, Info, ShieldCheck } from "lucide-react";
 import {
   Panel,
   Pill,
@@ -350,6 +350,36 @@ function BlockedCard({
 }
 
 // ── Main ──────────────────────────────────────────────────
+// The approval policy, as an info tooltip in the inbox header (replaces the
+// old static "Approval boundary" panel on Home). Hover or keyboard focus.
+const APPROVAL_BOUNDARY =
+  "Drafting, research, task updates, and wiki edits run internally. Sending email, calendar changes, publishing, and other active changes wait here for your approval. Gmail send/reply/labels and Calendar create/edit/delete always require approval.";
+
+function ApprovalBoundaryInfo() {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="Approval boundary"
+        aria-describedby="approval-boundary-tip"
+        className="inline-flex items-center justify-center rounded-full p-0.5 text-[var(--text-3)] hover:text-[var(--text)] focus:text-[var(--text)] outline-none"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      <span
+        id="approval-boundary-tip"
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 w-[300px] rounded-[10px] border border-[var(--line-strong)] bg-[var(--surface-1)] p-3 text-[12px] leading-relaxed text-[var(--text-2)] opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        <span className="mb-1 flex items-center gap-1.5 font-semibold text-[var(--text)]">
+          <ShieldCheck className="w-3.5 h-3.5 text-[var(--warn)]" /> Approval boundary
+        </span>
+        {APPROVAL_BOUNDARY}
+      </span>
+    </span>
+  );
+}
+
 export function ApprovalInbox({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
   const [requests, setRequests] = useState<Req[]>([]);
   const [blockedTasks, setBlockedTasks] = useState<BlockedTask[]>([]);
@@ -404,7 +434,10 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
     <div className={`flex h-full flex-col ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
-        <Eyebrow>Approval inbox</Eyebrow>
+        <div className="flex items-center gap-1.5">
+          <Eyebrow>Approval inbox</Eyebrow>
+          <ApprovalBoundaryInfo />
+        </div>
         <div className="flex items-center gap-1.5">
           {requests.length > 0 && <Pill tone="warn">{requests.length} to approve</Pill>}
           {blockedTasks.length > 0 && <Pill tone="down">{blockedTasks.length} blocked on you</Pill>}
@@ -465,7 +498,7 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
               className="inline-flex items-center gap-1 self-start text-[12.5px] font-medium transition-colors"
               style={{ color: "var(--accent)" }}
             >
-              View all in Hermes →
+              View all in Dispatch →
             </a>
           )}
         </div>

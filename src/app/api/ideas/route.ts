@@ -1,7 +1,13 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { kanbanCreateTask, kanbanTaskAction, kanbanDashboardConfigured } from "@/lib/kanban-dashboard-client";
+import { isBacklogStatus } from "@/lib/idea-status";
+
+// Ideas are a backlog only (New / Considering / Rejected). Work starts with
+// POST /api/ideas/[id]/send, which creates the kanban task and stores its id
+// on Idea.kanbanTaskId; from then on the task owns the lifecycle. Legacy
+// approved / in-progress / done rows are left untouched and mapped for
+// display by src/lib/idea-status.ts.
 
 export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get("type");
@@ -15,7 +21,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
+  if (!body.title || typeof body.title !== "string") {
+    return NextResponse.json({ error: "title required" }, { status: 400 });
+  }
 
   const idea = await prisma.idea.create({
     data: {
@@ -24,84 +33,33 @@ export async function POST(req: NextRequest) {
       category: body.category || null,
       type: body.type || null,
       model: body.model || null,
-      status: body.status || null,
+      status: isBacklogStatus(body.status) ? body.status : "new",
     },
   });
 
   return NextResponse.json(idea);
 }
 
-// Statuses that push (or update) a linked kanban task so active ideas surface
-// on the board — and in the chief-of-staff brief, which reads straight off
-// the board. Statuses not listed here don't touch kanban.
-//
-// "approved" intentionally does NOT create a kanban task — approving just
-// puts the idea on Josh's list; nothing runs yet. The kanban task (and any
-// actual agent work) is created only when he clicks "Start" ("in-progress"),
-// a deliberate action to send it off to run.
-const KANBAN_SYNC_STATUS: Record<string, "create" | "complete" | "archive" | "ready"> = {
-  "in-progress": "create",
-  done: "complete",
-  rejected: "archive",
-};
+// Editable fields only — kanbanTaskId is written exclusively by the send route.
+const EDITABLE = ["title", "description", "category", "status", "rejectionReason"] as const;
 
 export async function PUT(req: NextRequest) {
-  const { id, ...updates } = await req.json();
+  const { id, ...updates } = await req.json().catch(() => ({}));
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
+  if ("status" in updates && !isBacklogStatus(updates.status)) {
+    return NextResponse.json(
+      { error: "Ideas only move between New, Considering, and Rejected. Use Send to Hermes to start work." },
+      { status: 422 },
+    );
+  }
+
+  const data: Record<string, unknown> = {};
+  for (const key of EDITABLE) if (key in updates) data[key] = updates[key];
+  if (data.status && data.status !== "rejected") data.rejectionReason = null;
+
   try {
-    const existing = await prisma.idea.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-    // Sync to kanban on a real status change. Connectivity failures are
-    // best-effort (an idea update must never fail just because the kanban
-    // bridge is briefly unreachable) but a VALIDATION failure — e.g. approving
-    // an idea with no real description — hard-rejects the transition instead
-    // of silently flipping the idea to "approved" with nothing behind it.
-    // A vague/empty description produces a kanban task no worker can ever
-    // act on, which then gets endlessly re-specified/re-promoted by the
-    // auto-decomposer (a real runaway-loop incident this closed).
-    if (
-      typeof updates.status === "string" &&
-      updates.status !== existing.status &&
-      kanbanDashboardConfigured()
-    ) {
-      const action = KANBAN_SYNC_STATUS[updates.status];
-      if (action === "create" && !existing.kanbanTaskId) {
-        const description = (existing.description || "").trim();
-        if (description.length < 20) {
-          return NextResponse.json(
-            {
-              error: `Add a real description before approving "${existing.title}" — what exactly should happen, and where (site/product/system). Vague ideas create kanban tasks no worker can act on.`,
-            },
-            { status: 422 }
-          );
-        }
-      }
-      try {
-        if (action === "create" && !existing.kanbanTaskId) {
-          const created = await kanbanCreateTask({
-            title: existing.title,
-            body: [
-              existing.description!.trim(),
-              "",
-              "---",
-              "Approved idea from the Hermy HQ Ideas board.",
-            ].join("\n"),
-          });
-          if (created?.task?.id) updates.kanbanTaskId = created.task.id;
-        } else if (action && action !== "create" && existing.kanbanTaskId) {
-          await kanbanTaskAction(existing.kanbanTaskId, action);
-        }
-      } catch (err) {
-        console.error("kanban sync failed for idea", id, err);
-      }
-    }
-
-    const idea = await prisma.idea.update({
-      where: { id },
-      data: updates,
-    });
+    const idea = await prisma.idea.update({ where: { id }, data });
     return NextResponse.json(idea);
   } catch {
     return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -109,7 +67,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { id } = await req.json();
+  const { id } = await req.json().catch(() => ({}));
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
   await prisma.idea.delete({ where: { id } }).catch(() => {});
