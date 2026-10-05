@@ -24,13 +24,12 @@
  * Optional env: BRIDGE_POLL_MS (5000), BRIDGE_MIRROR_MS (30000),
  *               KANBAN_DB_PATH (/hermes-ro/kanban.db, read-only mount).
  *
- * NOTE: Memory Wiki was removed from Hermy HQ entirely — it required a Mac
- * mini-style always-on local machine to write markdown files, which this
- * VPS/Docker deployment doesn't have, and Hermes's API server has no write
- * endpoint for the wiki either (memory_write_api is hard-disabled
- * server-side). If it's ever wanted again, either build a small write API
- * on the Hermes side, or use chat with the agent directly ("remember X")
- * — that writes ~/.hermes/wiki/*.md immediately, no dashboard needed.
+ * NOTE: The bridge does not touch the wiki. Hermy HQ's /wiki page reads and
+ * writes the shared Markdown wiki directly via a bind mount
+ * (HERMES_WIKI_ROOT=/wiki, see compose.yaml and src/lib/wiki-fs.ts), and every
+ * Hermes profile uses the same absolute path /opt/data/home/.hermes/wiki
+ * (skill source: hermes-bridge/wiki-skill/SKILL.md, installed per profile as
+ * skills/note-taking/hermes-wiki).
  */
 import pg from "pg";
 import fs from "node:fs";

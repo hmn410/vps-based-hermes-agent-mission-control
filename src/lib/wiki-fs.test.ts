@@ -73,14 +73,38 @@ test("writeWikiFile reports a conflict instead of overwriting a concurrent chang
     return true;
   });
   assert.equal(await fs.readFile(path.join(root, "PENDING.md"), "utf8"), "# Pending\n## Queue\n### Proposed entry\n");
-  await rejects(writeWikiFile("PENDING.md", "x", undefined, root), 400);
+  await rejects(writeWikiFile("PENDING.md", "x", 42, root), 400);
+});
+
+test("concurrent saves from the same base version allow exactly one writer", async () => {
+  const { root } = await fixture();
+  const loaded = await readWikiFile("INDEX.md", root);
+  const [first, second] = await Promise.allSettled([
+    writeWikiFile("INDEX.md", "A".repeat(400_000), loaded.hash, root),
+    writeWikiFile("INDEX.md", "B".repeat(400_000), loaded.hash, root),
+  ]);
+  const outcomes = [first, second];
+  assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+  const rejected = outcomes.find((outcome) => outcome.status === "rejected");
+  assert.ok(rejected && rejected.status === "rejected" && rejected.reason instanceof WikiError);
+  assert.equal(rejected.reason.status, 409);
+  const content = await fs.readFile(path.join(root, "INDEX.md"), "utf8");
+  assert.ok(content === "A".repeat(400_000) || content === "B".repeat(400_000));
 });
 
 test("writeWikiFile creates new daily notes but never creates over an existing file", async () => {
   const { root } = await fixture();
   await writeWikiFile("daily/2026-10-06.md", "# Day 2\n", null, root);
   assert.equal(await fs.readFile(path.join(root, "daily", "2026-10-06.md"), "utf8"), "# Day 2\n");
-  await rejects(writeWikiFile("daily/2026-10-05.md", "clobber", null, root), 400);
+  await assert.rejects(writeWikiFile("daily/2026-10-05.md", "clobber", null, root), (e: unknown) => {
+    assert.ok(e instanceof WikiError);
+    assert.equal(e.status, 409);
+    const current = (e as WikiError & { current?: { content: string; hash: string } }).current;
+    assert.equal(current?.content, "# Day\n");
+    assert.equal(current?.hash, hashContent("# Day\n"));
+    return true;
+  });
+  assert.equal(await fs.readFile(path.join(root, "daily", "2026-10-05.md"), "utf8"), "# Day\n");
   await rejects(writeWikiFile("gone.md", "x", "deadbeef", root), 409);
 });
 
@@ -97,4 +121,23 @@ test("writeWikiFile refuses MEMORY.md/USER.md, escapes, non-md, and oversize con
 
 test("missing root reports 503 instead of leaking paths", async () => {
   await rejects(listWiki("/nonexistent/wiki-root-xyz"), 503);
+});
+
+test("symlinks inside the root cannot alias reserved or hidden files", async () => {
+  const { root } = await fixture();
+  await fs.writeFile(path.join(root, "MEMORY.md"), "mem");
+  await fs.symlink("MEMORY.md", path.join(root, "alias.md"));
+  await fs.writeFile(path.join(root, ".env"), "TOKEN=abc");
+  await fs.symlink(".env", path.join(root, "env.md"));
+  const alias = await readWikiFile("alias.md", root);
+  await rejects(writeWikiFile("alias.md", "PWNED", alias.hash, root), 403);
+  assert.equal(await fs.readFile(path.join(root, "MEMORY.md"), "utf8"), "mem");
+  await rejects(readWikiFile("env.md", root), 403);
+});
+
+test("editing a file deleted after it was opened reports 409, not 500", async () => {
+  const { root } = await fixture();
+  const loaded = await readWikiFile("INDEX.md", root);
+  await fs.unlink(path.join(root, "INDEX.md"));
+  await rejects(writeWikiFile("INDEX.md", "x", loaded.hash, root), 409);
 });

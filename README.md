@@ -62,7 +62,7 @@ environment variables.
 - Cron list and health mirrored from the agent
 
 **Memory**
-- Memory Wiki — browse and edit the agent's memory (facts, notes, links) as a wiki
+- Wiki (`/wiki`) — live view/editor for the shared Hermes Markdown wiki (`/opt/data/home/.hermes/wiki`, mounted at `/wiki`); conflict-checked saves, `MEMORY.md`/`USER.md` never writable
 
 **Work & content**
 - Tasks and Ideas boards
@@ -90,7 +90,7 @@ process runs on the machine where Hermes lives.
         │  • dispatch requests  │         │   │ hermes-bridge │    │
         │  • approval inbox     │         │   │  (bridge.mjs) │    │
         │  • activity / runs    │         │   └──────┬────────┘    │
-        │  • memory wiki        │         │          │ hermes CLI  │
+        │  • shared wiki        │         │          │ hermes CLI  │
         └──────────┬────────────┘         │   ┌──────▼────────┐    │
                    │                      │   │    Hermes     │    │
                    │                      │   │    agent      │    │
@@ -220,7 +220,7 @@ systemd (Linux) — full instructions in
 ## Project layout
 
 ```
-src/            Next.js App Router (dashboard, /hermes, memory-wiki, content-os, …)
+src/            Next.js App Router (dashboard, /hermes, /wiki, content-os, …)
 prisma/         schema.prisma (message-bus + feature models)
 hermes-bridge/  the bridge that runs on your machine next to Hermes
 .env.example    every env var, documented

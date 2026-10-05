@@ -28,6 +28,26 @@ const MAX_FILES = 1000;
 const MAX_DEPTH = 6;
 const RESERVED = new Set(["memory.md", "user.md"]);
 
+// The dashboard runs a single Node process. Serialize each file's compare-and-
+// swap so two editor requests based on the same version cannot both pass the
+// hash check and interleave their writes.
+const writeLocks = new Map<string, Promise<void>>();
+
+async function withWriteLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const previous = writeLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  writeLocks.set(key, queued);
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (writeLocks.get(key) === queued) writeLocks.delete(key);
+  }
+}
+
 export class WikiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -79,14 +99,26 @@ export async function resolveWikiPath(rel: string, root = wikiRoot()) {
   const abs = path.resolve(rroot, norm);
   if (!inside(rroot, abs)) throw new WikiError(400, "Path escapes the wiki root.");
   let exists = true;
+  let realRel = norm;
+  let real = abs;
   try {
-    const real = await fs.realpath(abs);
+    real = await fs.realpath(abs);
     if (!inside(rroot, real)) throw new WikiError(403, "Path escapes the wiki root.");
+    // A symlink inside the root must also point at an allowed target (.md, not
+    // hidden, not under a dot dir) — otherwise `notes.md -> .env` would leak.
+    realRel = path.relative(rroot, real).split(path.sep).join("/");
+    try {
+      normalizeWikiPath(realRel);
+    } catch {
+      throw new WikiError(403, "Link target is not an allowed wiki file.");
+    }
     const st = await fs.stat(real);
     if (!st.isFile()) throw new WikiError(400, "Not a file.");
   } catch (e) {
     if (e instanceof WikiError) throw e;
     exists = false;
+    real = abs;
+    realRel = norm;
     // New file: the nearest existing ancestor must resolve inside the root.
     let dir = path.dirname(abs);
     for (;;) {
@@ -102,7 +134,7 @@ export async function resolveWikiPath(rel: string, root = wikiRoot()) {
       }
     }
   }
-  return { rel: norm, abs, root: rroot, exists };
+  return { rel: norm, abs, real, realRel, root: rroot, exists };
 }
 
 export type WikiFileMeta = { path: string; size: number; mtime: string; hash: string };
@@ -127,9 +159,14 @@ export async function listWiki(root = wikiRoot()): Promise<WikiFileMeta[]> {
         } catch {
           continue;
         }
-        const st = await fs.stat(abs);
-        if (st.size > WIKI_MAX_BYTES) continue;
-        const content = await fs.readFile(abs, "utf8");
+        let st, content;
+        try {
+          st = await fs.stat(abs);
+          if (st.size > WIKI_MAX_BYTES) continue;
+          content = await fs.readFile(abs, "utf8");
+        } catch {
+          continue; // vanished (atomic rename by Hermes) or unreadable: skip, don't fail the whole catalog
+        }
         out.push({ path: rel, size: st.size, mtime: st.mtime.toISOString(), hash: hashContent(content) });
       }
     }
@@ -155,55 +192,85 @@ export async function writeWikiFile(rel: string, content: unknown, baseHash: unk
   if (typeof content !== "string") throw new WikiError(400, "Content must be a string.");
   if (Buffer.byteLength(content, "utf8") > WIKI_MAX_BYTES) throw new WikiError(413, "Content is too large.");
   if (content.includes("\0")) throw new WikiError(400, "Content contains NUL bytes.");
-  const r = await resolveWikiPath(rel, root);
-  const name = path.posix.basename(r.rel).toLowerCase();
-  if (RESERVED.has(name)) {
-    throw new WikiError(403, "MEMORY.md / USER.md cannot be written from Hermy HQ. Propose entries in PENDING.md.");
-  }
+  const assertWritable = (r: { rel: string; realRel: string }) => {
+    for (const p of [r.rel, r.realRel]) {
+      if (RESERVED.has(path.posix.basename(p).toLowerCase())) {
+        throw new WikiError(403, "MEMORY.md / USER.md cannot be written from Hermy HQ. Propose entries in PENDING.md.");
+      }
+    }
+  };
+  const pre = await resolveWikiPath(rel, root);
+  assertWritable(pre);
 
-  if (r.exists) {
-    if (typeof baseHash !== "string" || !baseHash) throw new WikiError(400, "baseHash is required to edit an existing file.");
-    const handle = await fs.open(r.abs, "r+");
-    try {
-      const current = await handle.readFile({ encoding: "utf8" });
-      const currentHash = hashContent(current);
-      if (currentHash !== baseHash) {
-        const st = await handle.stat();
-        throw Object.assign(new WikiError(409, "This file changed since you opened it. Review the latest version before saving."), {
-          current: { path: r.rel, content: current, hash: currentHash, mtime: st.mtime.toISOString() },
-        });
+  // Lock on the resolved target so symlink aliases of one file share a lock;
+  // re-resolve inside the lock so `exists` reflects the serialized state.
+  return withWriteLock(pre.real, async () => {
+    const r = await resolveWikiPath(rel, root);
+    assertWritable(r);
+    if (r.exists) {
+      const creating = baseHash === null || baseHash === undefined || baseHash === "";
+      if (!creating && typeof baseHash !== "string") throw new WikiError(400, "baseHash must be a string or null.");
+      let handle;
+      try {
+        handle = await fs.open(r.real, "r+");
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new WikiError(409, "This file was deleted or moved since you opened it.");
+        throw e;
       }
-      const buf = Buffer.from(content, "utf8");
-      await handle.truncate(0);
-      await handle.write(buf, 0, buf.length, 0);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } else {
-    if (baseHash !== null && baseHash !== undefined && baseHash !== "") {
-      throw new WikiError(409, "This file was deleted or moved since you opened it.");
-    }
-    const dir = path.dirname(r.abs);
-    await fs.mkdir(dir, { recursive: true });
-    try {
-      await fs.writeFile(r.abs, content, { encoding: "utf8", flag: "wx" });
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new WikiError(409, "A file with that name was just created.");
-      throw e;
-    }
-    // Keep ownership consistent with the Hermes-owned wiki (best effort; only works as root).
-    try {
-      const st = await fs.stat(r.root);
-      await fs.chown(r.abs, st.uid, st.gid);
-      let d = dir;
-      while (inside(r.root, d) && d !== r.root) {
-        await fs.chown(d, st.uid, st.gid);
-        d = path.dirname(d);
+      try {
+        const current = await handle.readFile({ encoding: "utf8" });
+        const currentHash = hashContent(current);
+        const hst = await handle.stat();
+        // If Hermes atomically replaced the file (rename) after we opened it,
+        // our handle points at an orphaned inode: writing would be lost.
+        const pst = await fs.stat(r.real).catch(() => null);
+        if (!pst || pst.ino !== hst.ino || pst.dev !== hst.dev) {
+          throw new WikiError(409, "This file was replaced since you opened it. Review the latest version before saving.");
+        }
+        if (creating || currentHash !== baseHash) {
+          const message = creating
+            ? "A file with that name already exists. Open it to edit the current version."
+            : "This file changed since you opened it. Review the latest version before saving.";
+          throw Object.assign(new WikiError(409, message), {
+            current: { path: r.rel, content: current, hash: currentHash, mtime: hst.mtime.toISOString() },
+          });
+        }
+        const buf = Buffer.from(content, "utf8");
+        await handle.truncate(0);
+        let off = 0;
+        while (off < buf.length) {
+          const { bytesWritten } = await handle.write(buf, off, buf.length - off, off);
+          off += bytesWritten;
+        }
+        await handle.sync();
+      } finally {
+        await handle.close();
       }
-    } catch {
-      /* not root: file already belongs to the writing user */
+    } else {
+      if (baseHash !== null && baseHash !== undefined && baseHash !== "") {
+        throw new WikiError(409, "This file was deleted or moved since you opened it.");
+      }
+      const dir = path.dirname(r.abs);
+      await fs.mkdir(dir, { recursive: true });
+      try {
+        await fs.writeFile(r.abs, content, { encoding: "utf8", flag: "wx" });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new WikiError(409, "A file with that name was just created.");
+        throw e;
+      }
+      // Keep ownership consistent with the Hermes-owned wiki (best effort; only works as root).
+      try {
+        const st = await fs.stat(r.root);
+        await fs.chown(r.abs, st.uid, st.gid);
+        let d = dir;
+        while (inside(r.root, d) && d !== r.root) {
+          await fs.chown(d, st.uid, st.gid);
+          d = path.dirname(d);
+        }
+      } catch {
+        /* not root: file already belongs to the writing user */
+      }
     }
-  }
-  return readWikiFile(r.rel, root);
+    return readWikiFile(r.rel, root);
+  });
 }

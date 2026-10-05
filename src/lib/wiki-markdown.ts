@@ -12,12 +12,12 @@ export type Inline =
   | { t: "link"; href: string; c: Inline[] };
 
 export type Block =
-  | { t: "h"; level: number; c: Inline[] }
+  | { t: "h"; level: number; c: Inline[]; id: string }
   | { t: "p"; c: Inline[] }
   | { t: "code"; lang: string; v: string }
   | { t: "quote"; c: Block[] }
   | { t: "list"; ordered: boolean; items: { checked: boolean | null; c: Inline[]; depth: number }[] }
-  | { t: "table"; rows: Inline[][][] }
+  | { t: "table"; head: Inline[][] | null; rows: Inline[][][] }
   | { t: "hr" };
 
 export function parseInline(src: string): Inline[] {
@@ -64,7 +64,7 @@ export function parseInline(src: string): Inline[] {
     }
     if (ch === "[") {
       const close = src.indexOf("](", i + 1);
-      const end = close > i ? src.indexOf(")", close + 2) : -1;
+      const end = close > i ? matchParen(src, close + 1) : -1;
       if (close > i && end > close) {
         flush();
         out.push({ t: "link", href: src.slice(close + 2, end).trim(), c: parseInline(src.slice(i + 1, close)) });
@@ -79,9 +79,57 @@ export function parseInline(src: string): Inline[] {
   return out;
 }
 
+/** Index of the `)` that closes the `(` at `open`, honouring nested parentheses and `\)` escapes; -1 if unbalanced. */
+function matchParen(src: string, open: number): number {
+  let depth = 0;
+  for (let j = open; j < src.length; j++) {
+    const c = src[j];
+    if (c === "\\") {
+      j++;
+      continue;
+    }
+    if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) return j;
+  }
+  return -1;
+}
+
+/** Split a `| a | b |` table row on unescaped pipes. `\|` stays escaped so parseInline renders a literal `|`. */
+export function splitTableRow(line: string): string[] {
+  const body = line.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  const cells: string[] = [];
+  let cur = "";
+  for (let j = 0; j < body.length; j++) {
+    const c = body[j];
+    if (c === "\\" && j + 1 < body.length) {
+      cur += c + body[j + 1];
+      j++;
+    } else if (c === "|") {
+      cells.push(cur.trim());
+      cur = "";
+    } else cur += c;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+/** Plain text of inline nodes (used for heading ids). */
+export function inlineText(nodes: Inline[]): string {
+  return nodes.map((n) => (n.t === "text" || n.t === "code" ? n.v : inlineText(n.c))).join("");
+}
+
+/** GitHub-style heading slug: lowercase, punctuation dropped, spaces to hyphens. */
+export function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 
-export function parseMarkdown(src: string): Block[] {
+export function parseMarkdown(src: string, seenIds: Map<string, number> = new Map()): Block[] {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
   const blocks: Block[] = [];
   let i = 0;
@@ -107,7 +155,11 @@ export function parseMarkdown(src: string): Block[] {
     }
     const h = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
     if (h) {
-      blocks.push({ t: "h", level: h[1].length, c: parseInline(h[2]) });
+      const c = parseInline(h[2]);
+      const base = slugify(inlineText(c)) || "section";
+      const n = seenIds.get(base) ?? 0;
+      seenIds.set(base, n + 1);
+      blocks.push({ t: "h", level: h[1].length, c, id: n ? `${base}-${n}` : base });
       i++;
       continue;
     }
@@ -119,17 +171,18 @@ export function parseMarkdown(src: string): Block[] {
     if (/^\s*>/.test(line)) {
       const buf: string[] = [];
       while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
-      blocks.push({ t: "quote", c: parseMarkdown(buf.join("\n")) });
+      blocks.push({ t: "quote", c: parseMarkdown(buf.join("\n"), seenIds) });
       continue;
     }
     if (/^\s*\|.*\|\s*$/.test(line)) {
-      const rows: Inline[][][] = [];
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
-        const cells = lines[i].trim().slice(1, -1).split("|").map((c) => c.trim());
-        if (!cells.every((c) => /^:?-{2,}:?$/.test(c))) rows.push(cells.map(parseInline));
-        i++;
-      }
-      blocks.push({ t: "table", rows });
+      const raw: string[][] = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) raw.push(splitTableRow(lines[i++]));
+      const isSep = (cells: string[]) => cells.every((c) => /^:?-{2,}:?$/.test(c));
+      // GFM: the first row is a header only when the delimiter row follows it.
+      const hasHead = raw.length > 1 && isSep(raw[1]);
+      const head = hasHead ? raw[0].map(parseInline) : null;
+      const rows = raw.slice(hasHead ? 2 : 0).filter((cells) => !isSep(cells)).map((cells) => cells.map(parseInline));
+      blocks.push({ t: "table", head, rows });
       continue;
     }
     const lm = line.match(LIST_RE);
@@ -138,6 +191,8 @@ export function parseMarkdown(src: string): Block[] {
       const items: { checked: boolean | null; c: Inline[]; depth: number }[] = [];
       while (i < lines.length) {
         const m = lines[i].match(LIST_RE);
+        // A top-level marker of the other kind (`-` vs `1.`) starts a new list.
+        if (m && items.length && /\d/.test(m[2]) !== ordered && m[1].replace(/\t/g, "  ").length < 2) break;
         if (m) {
           let text = m[3];
           let checked: boolean | null = null;
@@ -185,8 +240,11 @@ export function resolveWikiLink(fromPath: string, href: string):
   const h = href.trim();
   if (/^(https?:|mailto:)/i.test(h)) return { kind: "external", href: h };
   if (/^[a-z][a-z0-9+.-]*:/i.test(h) || h.startsWith("//")) return null;
-  const [pathPart, frag = ""] = h.split("#", 2);
-  if (!pathPart) return null;
+  const hashAt = h.indexOf("#");
+  const pathPart = hashAt < 0 ? h : h.slice(0, hashAt);
+  const frag = hashAt < 0 ? "" : h.slice(hashAt + 1);
+  // `#section` links point at a heading in the current file.
+  if (!pathPart) return frag ? { kind: "wiki", path: fromPath, hash: frag } : null;
   const baseParts = fromPath.split("/").slice(0, -1);
   const parts = pathPart.startsWith("/") ? [] : baseParts;
   for (const seg of pathPart.split("/")) {

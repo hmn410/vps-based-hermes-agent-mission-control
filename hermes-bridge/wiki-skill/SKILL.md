@@ -1,57 +1,57 @@
 ---
-name: wiki
-description: >
-  Long-term memory wiki. Use this whenever you learn, decide, or are corrected on
-  something durable that is too big or too detailed for MEMORY.md. Read from and
-  write to ~/.hermes/wiki as your warm, git-tracked, never-forget memory.
-version: 1.0.0
+name: hermes-wiki
+description: "Use when reading or updating the shared Hermes wiki. One canonical path for all profiles."
+version: 2.0.0
+metadata:
+  hermes:
+    tags: [wiki, documentation, memory, pending, daily-notes]
 ---
 
-# Memory Wiki
+# Hermes Wiki (shared, canonical)
 
-`MEMORY.md` and `USER.md` are your tiny hot cache (~1,300 tokens total, always in
-context). The **wiki** at `~/.hermes/wiki/` is your warm, unlimited, git-tracked
-long-term memory. It is browsed and edited by the operator in Hermy HQ, so keep it clean.
+> Source of truth for this skill: `hermy-hq/hermes-bridge/wiki-skill/SKILL.md`.
+> Installed copies live at `<profile>/skills/note-taking/hermes-wiki/SKILL.md`.
 
-## When to write to the wiki (not MEMORY.md)
-- After any complex task (5+ tool calls): append a line to `log/YYYY-MM.md` and, if you
-  learned something reusable, create/update a `lessons/` entry.
-- When the operator makes a **decision** → a `decisions/` entry with the rationale + date.
-- When you learn a durable fact about a **project, person, or the business** that is
-  bigger than a one-liner → a `projects/`, `people/`, or `facts/` entry.
-- When corrected ("no, do it this way") → update the relevant entry; **don't delete the
-  old value — mark it `status: superseded`** and add the new fact. Preserve history.
-- Keep MEMORY.md for only ~10-20 always-true, high-frequency facts, plus a pointer:
-  `Full long-term memory at ~/.hermes/wiki — grep/read it before answering project questions.`
+The one documentation wiki for **every** Hermes profile (default, builder, ops,
+personal, seocontent) and for Hermy HQ's `/wiki` page lives at:
 
-## Entry format (one markdown file per entry, YAML frontmatter + body)
 ```
----
-id: proj-viralpen
-type: project        # fact | preference | decision | event | project | contact | lesson | metric | note
-title: ViralPen.ai SaaS
-status: active       # active | superseded | archived
-confidence: high     # high | medium | low
-provenance: user-stated   # user-stated | observed | web | session:<id>
-tags: [saas, billing]
-links: [decision-pricing-99]
-updated: 2026-07-23
----
-Multi-tenant article studio at ~/viralpen. $99/mo. Twitter OAuth.
-## Open loops
-- [ ] Migrate billing to usage-based (see decision-pricing-99)
+/opt/data/home/.hermes/wiki/
 ```
-Files live under type folders: `projects/`, `people/`, `decisions/`, `lessons/`,
-`facts/`, `log/`. Keep `INDEX.md` updated (one line per entry: `id · title · type · updated`).
 
-## Retrieval (before answering)
-1. `INDEX.md` is injected hot — scan it for the right entry id.
-2. `search_files ~/.hermes/wiki "<term>"` or read the specific file with `read_file`.
-3. If still unsure, `session_search` the conversation history (free, unlimited).
-Only pull the 1-2 entries you actually need — don't load the whole wiki.
+Always use this absolute path. Never use `~/wiki`, `~/.hermes/wiki`, `$HOME/...`
+or `$WIKI_PATH`: in non-default profiles those resolve to a per-profile copy
+that nobody else sees. Never create a second wiki anywhere.
 
-## Hygiene
-- After writing, `git -C ~/.hermes/wiki add -A && git commit -m "wiki: <what changed>"`.
-- Never destroy history — supersede, don't overwrite.
-- The nightly `wiki-consolidate` cron merges duplicates, demotes stale entries, and
-  rebuilds INDEX.md — keep entries small and single-purpose so it can.
+## Layout (don't invent new top-level folders without recording why in INDEX.md)
+
+- `INDEX.md`: catalog of durable records. Start here when you don't know the record.
+- `standing-instructions.md`: operating rules and precedence.
+- `PENDING.md`: the **only** queue for proposed `MEMORY.md` / `USER.md` entries.
+- `projects/specs-and-decisions.md`: project scope, decisions, rationale (dated `###` entries).
+- `daily/YYYY-MM-DD.md`: dated work log (America/Chicago date). Append; don't rewrite others' entries.
+- `preferences/`: durable operator preferences and operating models.
+
+## Workflow
+
+1. **Session start:** read `PENDING.md`; report how many proposals await Josh's
+   approval with a one-line summary each, or say the queue is empty.
+2. **Before work:** open the relevant record (via `INDEX.md`).
+3. **Before finishing:** record decisions in `projects/specs-and-decisions.md`,
+   log the work in today's `daily/` note, and add any new durable record to `INDEX.md`.
+4. **Re-read a file right before editing it.** Other profiles and Hermy HQ write
+   the same files; use a targeted patch, never overwrite a whole file from a stale copy.
+
+## Long-term memory rule
+
+Never write `MEMORY.md` / `USER.md` directly from wiki work. Add a proposal to
+`PENDING.md` (target, exact text, rationale, source link, `Status: pending`).
+Nothing is promoted until Josh approves that exact entry.
+
+## Hygiene check (when asked, or after large edits)
+
+- Every relative link resolves (ignore links inside fenced code blocks).
+- Every durable record is listed in `INDEX.md`; no orphans.
+- Markdown (`.md`) files only; no secrets, credentials, or tokens in the wiki.
+
+The wiki is not a git repo; there is no commit step and no consolidation cron.
