@@ -356,6 +356,8 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
   const [followUpTasks, setFollowUpTasks] = useState<FollowUpTask[]>([]);
   const [pending, setPending] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  // A failed poll must not render as "you're clear".
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
     const data = await getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedTask[]; followUpTasks?: FollowUpTask[] }>(
@@ -367,6 +369,7 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
       setFollowUpTasks(data.followUpTasks ?? []);
       setPending(data.pending ?? (data.requests?.length ?? 0) + (data.blockedTasks?.length ?? 0) + (data.followUpTasks?.length ?? 0));
     }
+    setLoadError(!data);
     setLoaded(true);
   }, []);
 
@@ -406,11 +409,20 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
           {requests.length > 0 && <Pill tone="warn">{requests.length} to approve</Pill>}
           {blockedTasks.length > 0 && <Pill tone="down">{blockedTasks.length} blocked on you</Pill>}
           {followUpTasks.length > 0 && <Pill tone="warn">{followUpTasks.length} follow-up{followUpTasks.length === 1 ? "" : "s"}</Pill>}
-          {totalCount === 0 && <Pill tone="neutral">0 pending</Pill>}
+          {totalCount === 0 && !loadError && <Pill tone="neutral">0 pending</Pill>}
+          {loadError && <Pill tone="down">queue unavailable</Pill>}
         </div>
       </div>
 
-      {loaded && isEmpty ? (
+      {loaded && isEmpty && loadError ? (
+        <Panel className="flex-1 p-2">
+          <EmptyState
+            icon={<AlertTriangle className="w-6 h-6" style={{ color: "var(--down)" }} />}
+            title="Couldn't load the approval queue"
+            hint="HQ's requests API did not answer, so pending approvals, blocked tasks, and follow-ups are unknown — not clear. Retrying automatically."
+          />
+        </Panel>
+      ) : loaded && isEmpty ? (
         <Panel className="flex-1 p-2">
           <EmptyState
             icon={<Check className="w-6 h-6" style={{ color: "var(--up)" }} />}

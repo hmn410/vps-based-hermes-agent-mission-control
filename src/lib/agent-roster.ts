@@ -1,6 +1,6 @@
 export const AGENT_ROSTER = [
   { id: "hermes", name: "Hermes", profile: "default" },
-  { id: "integgy", name: "Integgy", profile: "ops" },
+  { id: "integgy", name: "Ops", profile: "ops" }, // legacy internal id; display name is neutral
   { id: "jbt", name: "JBT", profile: "builder" },
   { id: "josh", name: "Josh", profile: "personal" },
   { id: "pixel", name: "Pixel", profile: "seocontent" },

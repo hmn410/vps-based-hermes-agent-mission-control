@@ -32,14 +32,6 @@ const statusConfig: Record<string, { color: string; dot: string; label: string; 
   mixed: { color: "var(--warn)", dot: "var(--warn)", label: "Partial" },
 };
 
-const roleColors: Record<string, string> = {
-  hermes: "from-slate-400/20 to-slate-500/5 border-slate-400/20",
-  integgy: "from-sky-500/20 to-sky-600/5 border-sky-500/20",
-  jbt: "from-orange-500/20 to-orange-600/5 border-orange-500/20",
-  josh: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
-  pixel: "from-blue-500/20 to-blue-600/5 border-blue-500/20",
-};
-
 // Which real Hermes profile each persona's kanban tasks are assigned to —
 // shown on-card so it's clear which profile's memory/skills a chat is
 // actually running on (kept in sync with hermes-bridge/bridge.mjs's
@@ -300,8 +292,6 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
     }
   }
 
-  const agentColor = roleColors[agent.id]?.split(" ")[0]?.replace("from-","text-")?.replace("/20","") || "text-[var(--text-3)]";
-
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="elevated w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -379,9 +369,9 @@ export default function AgentsPage() {
   }, []);
 
   useEffect(() => {
-    loadAgents();
+    const first = setTimeout(loadAgents, 0);
     const interval = setInterval(loadAgents, 10000); // poll every 10s
-    return () => clearInterval(interval);
+    return () => { clearTimeout(first); clearInterval(interval); };
   }, [loadAgents]);
 
   if (loading) {
@@ -407,7 +397,7 @@ export default function AgentsPage() {
       <div className="hq-rise flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="eyebrow mb-2.5">Agent HQ</div>
-          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Your AI Team</h1>
+          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Agents</h1>
           <p className="text-[13px] text-[var(--text-3)] mt-3">Working 24/7</p>
         </div>
         <div className="flex items-center gap-6">

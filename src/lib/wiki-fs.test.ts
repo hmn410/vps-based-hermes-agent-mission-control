@@ -3,7 +3,7 @@ import test from "node:test";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { hashContent, listWiki, normalizeWikiPath, readWikiFile, writeWikiFile, WikiError } from "./wiki-fs";
+import { _wikiTestHooks, hashContent, listWiki, normalizeWikiPath, readWikiFile, writeWikiFile, WikiError } from "./wiki-fs";
 
 async function fixture() {
   const base = await fs.mkdtemp(path.join(process.env.TMPDIR || os.tmpdir(), "wiki-test-"));
@@ -57,7 +57,7 @@ test("writeWikiFile updates the real file when baseHash matches", async () => {
   const after = await writeWikiFile("INDEX.md", "# Index\n- new\n", before.hash, root);
   assert.equal(await fs.readFile(path.join(root, "INDEX.md"), "utf8"), "# Index\n- new\n");
   assert.equal(after.hash, hashContent("# Index\n- new\n"));
-  assert.equal((await fs.stat(path.join(root, "INDEX.md"))).ino, inode, "write is in place");
+  assert.notEqual((await fs.stat(path.join(root, "INDEX.md"))).ino, inode, "write is an atomic rename");
 });
 
 test("writeWikiFile reports a conflict instead of overwriting a concurrent change", async () => {
@@ -140,4 +140,135 @@ test("editing a file deleted after it was opened reports 409, not 500", async ()
   const loaded = await readWikiFile("INDEX.md", root);
   await fs.unlink(path.join(root, "INDEX.md"));
   await rejects(writeWikiFile("INDEX.md", "x", loaded.hash, root), 409);
+});
+
+async function tempFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, ent.name);
+    if (ent.isDirectory() && !ent.isSymbolicLink()) out.push(...(await tempFiles(abs)));
+    else if (ent.name.endsWith(".tmp")) out.push(abs);
+  }
+  return out;
+}
+
+test("atomic save writes correct content, preserves mode, and leaves no temp files", async () => {
+  const { root } = await fixture();
+  const file = path.join(root, "INDEX.md");
+  await fs.chmod(file, 0o640);
+  const loaded = await readWikiFile("INDEX.md", root);
+  await writeWikiFile("INDEX.md", "# Index\n- atomic\n", loaded.hash, root);
+  assert.equal(await fs.readFile(file, "utf8"), "# Index\n- atomic\n");
+  assert.equal((await fs.stat(file)).mode & 0o7777, 0o640);
+  assert.equal((await fs.stat(file)).uid, process.getuid?.());
+  await writeWikiFile("daily/new/2026-10-07.md", "# New\n", null, root);
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("temp files are visible only as dot files and are skipped by listWiki mid-save", async () => {
+  const { root } = await fixture();
+  const loaded = await readWikiFile("INDEX.md", root);
+  let seen: string[] = [];
+  _wikiTestHooks.beforeCommit = async (tmp) => {
+    assert.ok(path.basename(tmp).startsWith(".INDEX.md."));
+    assert.equal(await fs.readFile(tmp, "utf8"), "mid");
+    assert.equal(await fs.readFile(path.join(root, "INDEX.md"), "utf8"), "# Index\n", "target untouched before rename");
+    seen = (await listWiki(root)).map((f) => f.path);
+  };
+  try {
+    await writeWikiFile("INDEX.md", "mid", loaded.hash, root);
+  } finally {
+    _wikiTestHooks.beforeCommit = undefined;
+  }
+  assert.deepEqual(seen.sort(), ["INDEX.md", "PENDING.md", "daily/2026-10-05.md"]);
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("a change landing during the save is a 409 with current content and no temp leftovers", async () => {
+  const { root } = await fixture();
+  const file = path.join(root, "INDEX.md");
+  const loaded = await readWikiFile("INDEX.md", root);
+  _wikiTestHooks.beforeCommit = async () => {
+    await fs.writeFile(file, "# Hermes edit\n"); // in place, same inode
+  };
+  try {
+    await assert.rejects(writeWikiFile("INDEX.md", "operator", loaded.hash, root), (e: unknown) => {
+      assert.ok(e instanceof WikiError && e.status === 409);
+      assert.equal((e as WikiError & { current?: { content: string } }).current?.content, "# Hermes edit\n");
+      return true;
+    });
+    // Hermes atomically replaces the file (new inode, same content) mid-save.
+    const again = await readWikiFile("INDEX.md", root);
+    _wikiTestHooks.beforeCommit = async () => {
+      const t = path.join(root, ".hermes-replace");
+      await fs.writeFile(t, again.content);
+      await fs.rename(t, file);
+    };
+    await rejects(writeWikiFile("INDEX.md", "operator", again.hash, root), 409);
+  } finally {
+    _wikiTestHooks.beforeCommit = undefined;
+  }
+  assert.equal(await fs.readFile(file, "utf8"), "# Hermes edit\n");
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("forced error during commit cleans up the temp file and leaves the target intact", async () => {
+  const { root } = await fixture();
+  const loaded = await readWikiFile("INDEX.md", root);
+  _wikiTestHooks.beforeCommit = () => {
+    throw new Error("simulated crash before rename");
+  };
+  try {
+    await assert.rejects(writeWikiFile("INDEX.md", "never", loaded.hash, root), /simulated crash/);
+    await assert.rejects(writeWikiFile("daily/2026-10-09.md", "never", null, root), /simulated crash/);
+  } finally {
+    _wikiTestHooks.beforeCommit = undefined;
+  }
+  assert.equal(await fs.readFile(path.join(root, "INDEX.md"), "utf8"), "# Index\n");
+  await assert.rejects(fs.stat(path.join(root, "daily", "2026-10-09.md")), { code: "ENOENT" });
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("concurrent creates of the same new file: exactly one wins, the other gets 409", async () => {
+  const { root } = await fixture();
+  const outcomes = await Promise.allSettled([
+    writeWikiFile("daily/2026-10-08.md", "first", null, root),
+    writeWikiFile("daily/2026-10-08.md", "second", null, root),
+  ]);
+  assert.equal(outcomes.filter((o) => o.status === "fulfilled").length, 1);
+  const rejected = outcomes.find((o) => o.status === "rejected");
+  assert.ok(rejected && rejected.status === "rejected" && rejected.reason instanceof WikiError);
+  assert.equal(rejected.reason.status, 409);
+  const content = await fs.readFile(path.join(root, "daily", "2026-10-08.md"), "utf8");
+  assert.ok(content === "first" || content === "second");
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("create never overwrites a file that appears outside our lock (e.g. Hermes)", async () => {
+  const { root } = await fixture();
+  const file = path.join(root, "daily", "2026-10-10.md");
+  _wikiTestHooks.beforeCommit = async () => {
+    await fs.writeFile(file, "# Hermes wrote this\n");
+  };
+  try {
+    await assert.rejects(writeWikiFile("daily/2026-10-10.md", "operator", null, root), (e: unknown) => {
+      assert.ok(e instanceof WikiError && e.status === 409);
+      assert.equal((e as WikiError & { current?: { content: string } }).current?.content, "# Hermes wrote this\n");
+      return true;
+    });
+  } finally {
+    _wikiTestHooks.beforeCommit = undefined;
+  }
+  assert.equal(await fs.readFile(file, "utf8"), "# Hermes wrote this\n");
+  assert.deepEqual(await tempFiles(root), []);
+});
+
+test("saving through an in-root symlink alias replaces the real file and keeps the link", async () => {
+  const { root } = await fixture();
+  await fs.symlink("INDEX.md", path.join(root, "alias-index.md"));
+  const loaded = await readWikiFile("alias-index.md", root);
+  await writeWikiFile("alias-index.md", "# via alias\n", loaded.hash, root);
+  assert.ok((await fs.lstat(path.join(root, "alias-index.md"))).isSymbolicLink());
+  assert.equal(await fs.readFile(path.join(root, "INDEX.md"), "utf8"), "# via alias\n");
+  assert.deepEqual(await tempFiles(root), []);
 });

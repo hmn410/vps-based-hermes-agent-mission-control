@@ -5,8 +5,6 @@ import {
   Send,
   RefreshCw,
   Check,
-  X,
-  Pencil,
   Clock,
   Zap,
   Activity as ActivityIcon,
@@ -17,13 +15,14 @@ import {
   Panel,
   SectionHeader,
   Button,
-  Pill,
   EmptyState,
   Skeleton,
   Eyebrow,
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
-import { FollowUpCard, type FollowUpTask } from "@/components/approval-inbox";
+import { ApprovalInbox } from "@/components/approval-inbox";
+import { classifyCronJob, type CronVisibility } from "@/lib/cron-visibility";
+import { navLabel } from "@/components/nav-config";
 import cronstrue from "cronstrue";
 
 // Hermes' cron list already returns human text for most schedules
@@ -43,30 +42,6 @@ function humanizeSchedule(schedule: string): string {
 }
 
 // ── Types ─────────────────────────────────────────────────
-type ReqStatus =
-  | "queued"
-  | "awaiting_approval"
-  | "approved"
-  | "running"
-  | "done"
-  | "failed"
-  | "rejected";
-
-interface Req {
-  id: string;
-  origin: string;
-  kind: string;
-  title: string;
-  prompt: string | null;
-  sideEffecting: boolean;
-  status: ReqStatus;
-  result: string | null;
-  error: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-}
-
 type EvLevel = "info" | "up" | "warn" | "down";
 interface Ev {
   id: string;
@@ -76,13 +51,6 @@ interface Ev {
   agent: string | null;
   level: EvLevel;
   createdAt: string;
-}
-
-interface Health {
-  online: boolean;
-  gateway: string | null;
-  detail: string | null;
-  lastSeen: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -132,43 +100,6 @@ function levelColor(l: EvLevel): string {
   if (l === "down") return "var(--down)";
   if (l === "warn") return "var(--warn)";
   return "var(--text-3)";
-}
-
-// ── Health chip ───────────────────────────────────────────
-function HealthChip({ health }: { health: Health | null }) {
-  const online = !!health?.online;
-  const color = online ? "var(--up)" : "var(--warn)";
-  return (
-    <div
-      className="flex items-center gap-2 rounded-full border px-3 py-1.5"
-      style={{
-        color,
-        borderColor: `color-mix(in srgb, ${color} 22%, transparent)`,
-        background: `color-mix(in srgb, ${color} 8%, transparent)`,
-      }}
-    >
-      <span className="relative flex w-1.5 h-1.5">
-        {online && (
-          <span
-            className="absolute inline-flex h-full w-full rounded-full animate-ping"
-            style={{ background: "color-mix(in srgb, var(--up) 60%, transparent)" }}
-          />
-        )}
-        <span
-          className="relative inline-flex w-1.5 h-1.5 rounded-full"
-          style={{ background: color }}
-        />
-      </span>
-      <span className="text-[12px] font-semibold">
-        {online ? "Online" : "Offline · bridge idle"}
-      </span>
-      {health?.lastSeen && (
-        <span className="num text-[10.5px] text-[var(--text-3)]">
-          {timeAgo(health.lastSeen)}
-        </span>
-      )}
-    </div>
-  );
 }
 
 // ── Dispatch bar ──────────────────────────────────────────
@@ -267,168 +198,16 @@ function DispatchBar({ onDone }: { onDone: () => void }) {
   );
 }
 
-// ── Approval inbox card ───────────────────────────────────
-function InboxCard({ req, onAction }: { req: Req; onAction: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(req.title);
-  const [draftPrompt, setDraftPrompt] = useState(req.prompt ?? "");
-
-  const patch = async (body: Record<string, unknown>) => {
-    setBusy(true);
-    try {
-      await fetch(`/api/hermes/requests/${req.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      onAction();
-    } catch {
-      /* leave card in place on failure */
-    } finally {
-      setBusy(false);
-      setEditing(false);
-    }
-  };
-
-  return (
-    <Panel className={`p-5 ${busy ? "opacity-50 pointer-events-none" : ""}`}>
-      <div className="flex items-start justify-between gap-3 mb-2.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Pill tone="neutral">{req.kind}</Pill>
-          {req.sideEffecting && <Pill tone="warn">side-effecting</Pill>}
-        </div>
-        <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">
-          {timeAgo(req.createdAt)}
-        </span>
-      </div>
-
-      {editing ? (
-        <div className="space-y-2.5">
-          <input
-            value={draftTitle}
-            onChange={(e) => setDraftTitle(e.target.value)}
-            className="w-full bg-transparent text-[14px] font-medium text-[var(--text)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)]"
-          />
-          <textarea
-            value={draftPrompt}
-            onChange={(e) => setDraftPrompt(e.target.value)}
-            rows={3}
-            className="w-full bg-transparent text-[13px] text-[var(--text-2)] px-3 py-2 rounded-[8px] border border-[var(--line)] outline-none focus:border-[color-mix(in_srgb,var(--accent)_45%,transparent)] resize-y"
-          />
-        </div>
-      ) : (
-        <>
-          <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">
-            {req.title}
-          </h3>
-          {req.prompt && (
-            <p className="mt-1.5 text-[13px] text-[var(--text-2)] leading-snug line-clamp-3">
-              {req.prompt}
-            </p>
-          )}
-        </>
-      )}
-
-      <div className="flex items-center gap-2 mt-4">
-        {editing ? (
-          <>
-            <button
-              type="button"
-              onClick={() =>
-                patch({ action: "edit", title: draftTitle.trim(), prompt: draftPrompt })
-              }
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors"
-              style={{
-                color: "var(--accent)",
-                border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
-                background: "color-mix(in srgb, var(--accent) 10%, transparent)",
-              }}
-            >
-              <Check className="w-3.5 h-3.5" />
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(false);
-                setDraftTitle(req.title);
-                setDraftPrompt(req.prompt ?? "");
-              }}
-              className="btn-ghost inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] font-medium"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => patch({ action: "approve" })}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors"
-              style={{
-                color: "var(--up)",
-                border: "1px solid color-mix(in srgb, var(--up) 30%, transparent)",
-                background: "color-mix(in srgb, var(--up) 10%, transparent)",
-              }}
-            >
-              <Check className="w-3.5 h-3.5" />
-              Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => patch({ action: "reject" })}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--down)]"
-              style={{ border: "1px solid var(--line)" }}
-            >
-              <X className="w-3.5 h-3.5" />
-              Reject
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--text)]"
-              style={{ border: "1px solid var(--line)" }}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              Edit
-            </button>
-          </>
-        )}
-      </div>
-    </Panel>
-  );
-}
-
-
-// Kanban task parked on a human (blocked / repeat-blocked). Distinct from an
-// approval request: this work already started; the worker needs an answer.
-type BlockedOnYou = {
-  id: string; title: string; label?: string; attentionKind?: string;
-  reason: string | null; recurrences?: number; blockedAt?: string | null; updatedAt: string;
-};
-function BlockedOnYouCard({ task }: { task: BlockedOnYou }) {
-  return (
-    <Panel className="p-5" style={{ borderColor: "color-mix(in srgb, var(--down) 28%, transparent)" }}>
-      <div className="flex items-start justify-between gap-3 mb-2.5">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Pill tone="down">{task.attentionKind === "repeat_block" ? "Blocked again" : "Blocked on you"}</Pill>
-          {task.label && <Pill tone="neutral">{task.label}</Pill>}
-        </div>
-        <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">{timeAgo(task.blockedAt || task.updatedAt)}</span>
-      </div>
-      <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
-      {task.reason && <p className="mt-1.5 text-[13px] text-[var(--text-2)] leading-snug line-clamp-4 whitespace-pre-wrap">{task.reason}</p>}
-      <a href={`/tasks?task=${encodeURIComponent(task.id)}`} className="mt-3 inline-flex text-[12px] text-[var(--accent)]">Open on task board →</a>
-    </Panel>
-  );
-}
-
 // ── Cron / schedules ──────────────────────────────────────
 type CronJob = {
   id: string; status: string; name: string; schedule: string;
   nextRun: string | null; lastRun: string | null; lastResult: string | null;
   deliver: string | null; skills: string | null; script: string | null; mode: string | null;
+  visibility?: CronVisibility;
+};
+const VISIBILITY_LABEL: Record<Exclude<CronVisibility, "personal">, string> = {
+  system: "system · read-only",
+  work: "work · hidden · read-only",
 };
 function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: string | null; onDone: () => void }) {
   const [schedule, setSchedule] = useState("");
@@ -436,6 +215,12 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
   const [runName, setRunName] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  // System plumbing (kanban-*, local delivery) and work-related jobs are
+  // hidden by default and never actionable here (src/lib/cron-visibility.ts).
+  const [showHidden, setShowHidden] = useState(false);
+  const tagged = jobs.map((j) => ({ ...j, visibility: j.visibility ?? classifyCronJob(j) }));
+  const hiddenCount = tagged.filter((j) => j.visibility !== "personal").length;
+  const shown = showHidden ? tagged : tagged.filter((j) => j.visibility === "personal");
 
   const post = async (body: Record<string, unknown>, ok: string) => {
     setBusy(true);
@@ -499,17 +284,31 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
           <div className="flex items-center justify-between mb-3">
             <Eyebrow>schedules</Eyebrow>
             <span className="num text-[10.5px] text-[var(--text-3)]">
-              {jobs.length} job{jobs.length === 1 ? "" : "s"}
+              {shown.length} job{shown.length === 1 ? "" : "s"}
+              {!showHidden && hiddenCount > 0 && ` · ${hiddenCount} hidden`}
             </span>
           </div>
-          {jobs.length === 0 ? (
+          {hiddenCount > 0 && (
+            <label className="mb-3 flex items-center gap-2 text-[12px] text-[var(--text-2)] select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showHidden}
+                onChange={(e) => setShowHidden(e.target.checked)}
+                className="accent-[var(--accent)]"
+              />
+              Show system &amp; hidden jobs
+              <span className="text-[11px] text-[var(--text-3)]">(read-only)</span>
+            </label>
+          )}
+          {shown.length === 0 ? (
             <p className="text-[13px] text-[var(--text-3)] py-6 text-center">
-              No schedules yet.
+              {jobs.length === 0 ? "No schedules yet." : "No personal schedules."}
             </p>
           ) : (
             <div className="flex flex-col gap-2 max-h-[440px] overflow-auto -mx-1 px-1">
-              {jobs.map((j) => {
-                const active = j.status === "active";
+              {shown.map((j) => {
+                const active = j.status === "active" || j.status === "scheduled";
+                const readOnly = j.visibility !== "personal";
                 return (
                   <div key={j.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] p-3">
                     <div className="flex items-start gap-2.5">
@@ -521,8 +320,10 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                           {j.nextRun && <span>next {timeUntil(j.nextRun)}</span>}
                           {j.deliver && <span>→ {j.deliver.split(":")[0]}</span>}
                           {j.skills && <span>{j.skills}</span>}
+                          {readOnly && <span className="text-[var(--text-4)]">{VISIBILITY_LABEL[j.visibility as Exclude<CronVisibility, "personal">]}</span>}
                         </div>
                       </div>
+                      {!readOnly && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button title="Run now" disabled={busy} onClick={() => post({ op: "run", id: j.id, name: j.name }, "Run-now sent.")} className="p-1.5 rounded-md text-[var(--text-3)] hover:text-[var(--accent)] hover:bg-[var(--surface-1)] transition-colors">
                           <Zap className="w-3.5 h-3.5" />
@@ -537,6 +338,7 @@ function CronPanel({ jobs, syncedAt, onDone }: { jobs: CronJob[]; syncedAt: stri
                           </button>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -699,11 +501,6 @@ function ActivityFeed({ events }: { events: Ev[] }) {
 
 // ── Main ──────────────────────────────────────────────────
 export default function HermesPage() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [inbox, setInbox] = useState<Req[]>([]);
-  const [blockedOnYou, setBlockedOnYou] = useState<BlockedOnYou[]>([]);
-  const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
-  const [pending, setPending] = useState(0);
   const [events, setEvents] = useState<Ev[]>([]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [cronSync, setCronSync] = useState<string | null>(null);
@@ -711,21 +508,12 @@ export default function HermesPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [h, reqs, act, cr] = await Promise.all([
-      getJSON<Health>("/api/hermes/health"),
-      getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedOnYou[]; followUpTasks?: FollowUpTask[] }>(
-        "/api/hermes/requests?status=awaiting_approval&take=50"
-      ),
+    // Approvals / blocked / follow-ups are owned by the shared ApprovalInbox
+    // component; system health is shown once, in the sidebar footer.
+    const [act, cr] = await Promise.all([
       getJSON<{ events: Ev[] }>("/api/hermes/activity?take=30"),
       getJSON<{ jobs: CronJob[]; syncedAt: string }>("/api/hermes/crons"),
     ]);
-    if (h) setHealth(h);
-    if (reqs) {
-      setInbox(reqs.requests ?? []);
-      setBlockedOnYou(reqs.blockedTasks ?? []);
-      setFollowUps(reqs.followUpTasks ?? []);
-      setPending(reqs.pending ?? reqs.requests?.length ?? 0);
-    }
     if (act) setEvents(act.events ?? []);
 
     if (cr) {
@@ -756,13 +544,12 @@ export default function HermesPage() {
         {/* Header */}
         <div className="hq-rise pt-4 pb-8 flex items-end justify-between gap-4">
           <div>
-            <Eyebrow>Agent runtime</Eyebrow>
+            <Eyebrow>Hermes · agent runtime</Eyebrow>
             <h1 className="mt-2.5 text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
-              Hermes
+              {navLabel("/hermes")}
             </h1>
           </div>
           <div className="flex items-center gap-2.5">
-            <HealthChip health={health} />
             <button
               type="button"
               onClick={manualRefresh}
@@ -784,43 +571,11 @@ export default function HermesPage() {
           <HermesDispatches />
         </section>
 
-        {/* Approval inbox */}
-        <section className="mt-12">
-          <SectionHeader
-            label="Approval inbox"
-            title="Needs you: approvals and blocked tasks"
-            action={
-              pending > 0 ? (
-                <Pill tone="warn">{pending} pending</Pill>
-              ) : (
-                <span className="num text-[11px] text-[var(--text-3)]">clear</span>
-              )
-            }
-          />
-          {!loaded ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <Skeleton className="h-40" />
-              <Skeleton className="h-40" />
-            </div>
-          ) : inbox.length === 0 && blockedOnYou.length === 0 && followUps.length === 0 ? (
-            <p className="px-1 text-[12.5px] text-[var(--text-3)]">
-              Clear — side-effecting dashboard requests appear here before Hermes acts on them.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {inbox.map((req) => (
-                <InboxCard key={req.id} req={req} onAction={load} />
-              ))}
-              {blockedOnYou.map((task) => (
-                <BlockedOnYouCard key={task.id} task={task} />
-              ))}
-              {followUps.map((task) => (
-                <FollowUpCard key={task.id} task={task} compact={false} />
-              ))}
-            </div>
-          )}
+        {/* Approval inbox — the same shared component as Home (approvals,
+            blocked-on-you tasks, and follow-ups), so the two can't disagree. */}
+        <section className="mt-12" id="approval-inbox">
+          <ApprovalInbox />
         </section>
-
 
         {/* Cron / schedules */}
         <section className="mt-12">

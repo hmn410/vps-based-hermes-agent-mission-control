@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// Default agent roster
+// Default agent roster. The "integgy" id is a legacy internal key (bridge
+// ASSIGNEE_TO_AGENT + AgentState rows) for the Hermes `ops` profile; only the
+// neutral "Ops" wording is ever shown. HQ never surfaces employer work.
 const DEFAULT_AGENTS = [
   {
     id: "hermes",
@@ -18,9 +21,9 @@ const DEFAULT_AGENTS = [
   },
   {
     id: "integgy",
-    name: "Integgy",
-    emoji: "\uD83C\uDFA7",
-    role: "Ticket Ops \u00B7 Integris Support Queue",
+    name: "Ops",
+    emoji: "\uD83D\uDEE0\uFE0F",
+    role: "Ops \u00B7 Systems & Automation",
     status: "idle",
     tasksCompleted: 0,
     totalCost: 0,
@@ -61,21 +64,21 @@ const DEFAULT_AGENTS = [
 export async function GET() {
   try {
     const states = await prisma.agentState.findMany();
-    const stateMap: Record<string, any> = {};
+    const stateMap: Record<string, (typeof states)[number]> = {};
     for (const s of states) {
       stateMap[s.id] = s;
     }
 
     const agents = DEFAULT_AGENTS.map((agent) => {
-      const s = stateMap[agent.id] || {};
+      const s = stateMap[agent.id];
       return {
         ...agent,
-        status: s.status || agent.status,
-        currentTask: s.currentTask || undefined,
-        lastActive: s.lastActive || undefined,
-        tasksCompleted: s.tasksCompleted || agent.tasksCompleted,
-        totalCost: s.totalCost || agent.totalCost,
-        recentActivity: s.recentActivity || agent.recentActivity,
+        status: s?.status || agent.status,
+        currentTask: s?.currentTask || undefined,
+        lastActive: s?.lastActive || undefined,
+        tasksCompleted: s?.tasksCompleted || agent.tasksCompleted,
+        totalCost: s?.totalCost || agent.totalCost,
+        recentActivity: s?.recentActivity || agent.recentActivity,
       };
     });
 
@@ -102,9 +105,9 @@ export async function POST(request: Request) {
     const defaultAgent = DEFAULT_AGENTS.find((a) => a.id === agentId);
 
     // Get existing state or create defaults
-    let existing = await prisma.agentState.findUnique({ where: { id: agentId } });
+    const existing = await prisma.agentState.findUnique({ where: { id: agentId } });
 
-    const recentActivity = (existing?.recentActivity as any[]) || [];
+    const recentActivity = (existing?.recentActivity as Prisma.InputJsonValue[] | null) || [];
     const newRecentActivity = action
       ? [
           { timestamp: new Date().toISOString(), action },

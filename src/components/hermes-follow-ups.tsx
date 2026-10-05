@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, MessageSquare, RefreshCw, Send } from "lucide-react";
+import { MessageSquare, RefreshCw, Send } from "lucide-react";
 import { EmptyState, Panel, Pill, SectionHeader } from "@/components/ui/kit";
 
 type RequestMessage = {
@@ -163,7 +163,7 @@ export function HermesFollowUps() {
   return (
     <div className="w-full mx-auto p-6 pb-16">
       <div className="flex items-end justify-between gap-4 pb-8">
-        <div><div className="eyebrow mb-2.5 flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Follow-ups</div><h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Hermes conversations</h1><p className="mt-3 text-[12.5px] text-[var(--text-3)]">Reply to a result to correct it, continue the work, or ask for the missing deliverable.</p></div>
+        <div><div className="eyebrow mb-2.5 flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Hermes conversations</div><h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Follow-ups</h1><p className="mt-3 text-[12.5px] text-[var(--text-3)]">Reply to a result to correct it, continue the work, or ask for the missing deliverable.</p></div>
         <button type="button" onClick={() => { setRefreshing(true); void load(); }} className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px]" disabled={refreshing}><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} /> Refresh</button>
       </div>
       {!loaded ? <Panel><div className="sk m-1 h-28 rounded-[10px]" /></Panel> : conversations.length === 0 ? <Panel><EmptyState icon={<MessageSquare className="h-5 w-5" />} title="No Hermes conversations yet" hint="Dashboard requests and their follow-ups will appear here." /></Panel> : <div className="space-y-3"><SectionHeader label="Conversation history" title="Requests and replies" action={<span className="num text-[11px] text-[var(--text-3)]">{conversations.length} threads</span>} />{conversations.map((conversation) => <ConversationCard key={conversation.id} conversation={conversation} onQueued={load} />)}</div>}

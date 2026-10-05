@@ -264,7 +264,9 @@ function TaskCard({
   // Unblock covers Hermes' loop-triaged repeat blocks too (status=triage), not
   // just the literal `blocked` column — dashboard PATCH status=ready re-promotes.
   const showUnblock = attention.canUnblock;
-  const showComplete = col === "review" || col === "running";
+  // Not on running cards: a worker is still executing, and one click would
+  // finish the task underneath it. Review cards keep it (behind a confirm).
+  const showComplete = col === "review";
   const showArchive = col === "done";
 
   return (
@@ -492,9 +494,9 @@ export default function TasksPage() {
         {/* Header */}
         <div className="hq-rise flex flex-wrap items-end justify-between gap-4 mb-8" style={rise(0)}>
           <div>
-            <Eyebrow>Live from Hermes</Eyebrow>
+            <Eyebrow>Kanban board · from Hermes</Eyebrow>
             <h1 className="mt-2.5 text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
-              Task Orchestrator
+              Tasks
             </h1>
             <p className="text-[13px] text-[var(--text-3)] mt-3">
               What the orchestrator is doing right now, and the full lifecycle history below.

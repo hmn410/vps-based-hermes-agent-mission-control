@@ -4,51 +4,44 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
 import { signOut } from "next-auth/react";
-import {
-  Home,
-  Bot,
-  Lightbulb,
-  ClipboardList,
-  Cpu,
-  Menu,
-  X,
-  LogOut,
-  Coins,
-  Activity,
-  MessageSquare,
-  BookOpen,
-} from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
+import { NAV_GROUPS, MOBILE_NAV_ITEMS } from "@/components/nav-config";
+import { useSystemStatus } from "@/hooks/use-system-status";
 
-const navGroups = [
-  {
-    name: "Mission Control",
-    items: [
-      { href: "/", label: "Morning Brief", icon: Home },
-      { href: "/hermes", label: "Dispatch Terminal", icon: Cpu },
-      { href: "/follow-ups", label: "Follow-ups", icon: MessageSquare },
-      { href: "/live-work", label: "Live Work", icon: Activity },
-      { href: "/tasks", label: "Tasks", icon: ClipboardList },
-      { href: "/usage", label: "Usage", icon: Coins },
-    ],
-  },
-  {
-    name: "Workspace",
-    items: [
-      { href: "/wiki", label: "Wiki", icon: BookOpen },
-      { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/ideas", label: "Ideas", icon: Lightbulb },
-    ],
-  },
-];
+const STATUS_COLOR = { up: "var(--up)", warn: "var(--warn)", down: "var(--down)" } as const;
 
-// Mobile tab bar - personal operations only
-const mobileTabsRaw = [
-  { href: "/", label: "Brief", icon: Home },
-  { href: "/hermes", label: "Dispatch", icon: Cpu },
-  { href: "/live-work", label: "Live", icon: Activity },
-  { href: "/tasks", label: "Tasks", icon: ClipboardList },
-  { href: "/agents", label: "Agents", icon: Bot },
-];
+function SystemStatusLine() {
+  const status = useSystemStatus();
+  const color = STATUS_COLOR[status.level];
+  return (
+    <div
+      className="flex items-center gap-2 text-[var(--text-3)] text-[11.5px]"
+      title={status.detail}
+      role="status"
+      aria-live="polite"
+      data-testid="system-status"
+    >
+      <span className="relative flex w-1.5 h-1.5 shrink-0">
+        {status.level === "up" && (
+          <span className="absolute inline-flex h-full w-full rounded-full opacity-60 animate-ping" style={{ background: color }} />
+        )}
+        <span className="relative inline-flex w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+      </span>
+      <span style={status.level === "up" ? undefined : { color }}>{status.text}</span>
+    </div>
+  );
+}
+
+function Logo() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="w-8 h-8 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--surface-1)] flex items-center justify-center">
+        <span className="text-[var(--accent)] font-mono font-bold text-[13px] tracking-tight">&gt;_</span>
+      </div>
+      <span className="font-mono text-[var(--text)] tracking-[-0.01em] text-[15px] uppercase">Hermy<span className="text-[var(--accent)]">HQ</span></span>
+    </div>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -74,15 +67,6 @@ export function Sidebar() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  const Logo = () => (
-    <div className="flex items-center gap-2.5">
-      <div className="w-8 h-8 rounded-[var(--r-sm)] border border-[var(--accent)] bg-[var(--surface-1)] flex items-center justify-center">
-        <span className="text-[var(--accent)] font-mono font-bold text-[13px] tracking-tight">&gt;_</span>
-      </div>
-      <span className="font-mono text-[var(--text)] tracking-[-0.01em] text-[15px] uppercase">Hermy<span className="text-[var(--accent)]">HQ</span></span>
-    </div>
-  );
 
   return (
     <>
@@ -111,7 +95,7 @@ export function Sidebar() {
       {/* Mobile bottom tab bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg)]/90 backdrop-blur-xl border-t border-[var(--line)] px-2 py-2 safe-area-pb">
         <nav className="flex justify-around">
-          {mobileTabsRaw.map((item) => {
+          {MOBILE_NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
             return (
@@ -163,7 +147,7 @@ export function Sidebar() {
         {/* Nav */}
         <nav className="flex-1 px-3 overflow-y-auto">
           <div className="space-y-5">
-            {navGroups.map((group) => (
+            {NAV_GROUPS.map((group) => (
               <div key={group.name}>
                 <h3 className="eyebrow px-3 mb-1.5 !text-[10px] !text-[var(--text-4)]">
                   {group.name}
@@ -221,13 +205,7 @@ export function Sidebar() {
 
         {/* Footer */}
         <div className="px-4 py-4 border-t border-[var(--line)] space-y-3">
-          <div className="flex items-center gap-2 text-[var(--text-3)] text-[11.5px]">
-            <span className="relative flex w-1.5 h-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--up)] opacity-60 animate-ping" />
-              <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-[var(--up)]" />
-            </span>
-            <span>All systems online</span>
-          </div>
+          <SystemStatusLine />
           <button
             onClick={handleSignOut}
             disabled={signingOut}

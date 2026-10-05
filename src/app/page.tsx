@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Mail, ShieldCheck } from "lucide-react";
+import { Mail, ShieldCheck } from "lucide-react";
 import { HermesBriefing } from "@/components/hermes-briefing";
 import { ApprovalInbox } from "@/components/approval-inbox";
-import { GmailPanel } from "@/components/gmail-panel";
+import { GmailPanel, type GmailConnection } from "@/components/gmail-panel";
 import { CalendarPanel } from "@/components/calendar-panel";
+import { homePrivacyLine } from "@/lib/gmail-overview";
 
 export default function Dashboard() {
-  const [showGmail, setShowGmail] = useState(true);
+  // Driven by what the Gmail panel actually holds, so the subtitle never
+  // claims a connection state that isn't true. System health lives once, in
+  // the sidebar footer.
+  const [gmail, setGmail] = useState<GmailConnection>("loading");
 
   return (
     <div className="relative z-10 w-full mx-auto pb-16">
@@ -16,16 +20,9 @@ export default function Dashboard() {
         <div>
           <div className="eyebrow mb-2.5">Mission control · personal and JoshBuilds.Tech</div>
           <h1 className="text-[40px] font-semibold tracking-[-0.025em] leading-none text-[var(--hq-text)]">Morning Brief</h1>
-          <p className="text-[13px] text-[var(--hq-text-ghost)] mt-3 max-w-2xl">
-            Real Hermes tasks, schedules, memory, and approvals. Work-account data and Gmail stay disconnected unless you explicitly add them.
+          <p className="text-[13px] text-[var(--hq-text-ghost)] mt-3 max-w-2xl" data-testid="home-privacy-line">
+            Real Hermes tasks, schedules, memory, and approvals. {homePrivacyLine(gmail)}
           </p>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-[var(--hq-hairline)] bg-white/[0.02] px-3 py-1.5">
-          <span className="relative flex w-1.5 h-1.5">
-            <span className="absolute inline-flex h-full w-full rounded-full animate-ping" style={{ background: "color-mix(in srgb, var(--up) 60%, transparent)" }} />
-            <span className="relative inline-flex w-1.5 h-1.5 rounded-full" style={{ background: "var(--up)" }} />
-          </span>
-          <span className="eyebrow !text-[9.5px] !text-[var(--hq-text-faint)]">Hermes bridge connected</span>
         </div>
       </header>
 
@@ -40,24 +37,12 @@ export default function Dashboard() {
           <span className="eyebrow">Gmail &amp; Approvals</span>
           <span className="h-px w-12 sm:w-24 bg-[var(--hq-hairline)]" />
           <span className="text-[12px] text-[var(--hq-text-ghost)]">Inbox and pending sign-offs</span>
-          <button
-            type="button"
-            onClick={() => setShowGmail((visible) => !visible)}
-            aria-expanded={showGmail}
-            aria-controls="gmail-area"
-            className="btn-ghost ml-auto inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] shrink-0"
-          >
-            {showGmail ? "Hide Gmail" : "Show Gmail"}
-            {showGmail ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
-          {showGmail && (
-            <div id="gmail-area" className="h-[300px]">
-              <GmailPanel className="h-full" />
-            </div>
-          )}
-          <div className={`h-[300px] ${showGmail ? "" : "lg:col-span-2"}`}>
+          <div id="gmail-area" className="h-[300px]">
+            <GmailPanel className="h-full" onConnection={setGmail} />
+          </div>
+          <div className="h-[300px]">
             <ApprovalInbox compact className="h-full" />
           </div>
         </div>

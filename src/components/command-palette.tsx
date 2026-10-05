@@ -9,32 +9,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
-  Activity,
-  Bot,
-  Lightbulb,
-  ListChecks,
   Sparkles,
   CornerDownLeft,
   Search,
   Check,
-  type LucideIcon,
 } from "lucide-react";
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-}
-
-const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Agents", href: "/agents", icon: Bot },
-  { label: "Ideas", href: "/ideas", icon: Lightbulb },
-  { label: "Tasks", href: "/tasks", icon: ListChecks },
-  { label: "Hermes", href: "/hermes", icon: Sparkles },
-  { label: "Live Work", href: "/live-work", icon: Activity },
-];
+import { NAV_ITEMS as NAV, type NavItem } from "@/components/nav-config";
+import { requiresApproval } from "@/lib/dispatch-policy";
 
 type Row =
   | { kind: "nav"; item: NavItem }
@@ -44,33 +25,36 @@ export function CommandPalette() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  const [activeRaw, setActive] = useState(0);
   const [dispatched, setDispatched] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const openRef = useRef(open);
+  useEffect(() => { openRef.current = open; }, [open]);
+
+  // ── reset + focus when opening (done in the event, not an effect) ──
+  const show = useCallback(() => {
+    setQuery("");
+    setActive(0);
+    setDispatched(false);
+    setOpen(true);
+    // focus after paint so the trap works reliably
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
 
   // ── global open/close hotkey ──────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
-        setOpen((o) => !o);
+        if (openRef.current) setOpen(false);
+        else show();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // ── reset + focus when opening ────────────────────────────
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setActive(0);
-      setDispatched(false);
-      // focus after paint so the trap works reliably
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [open]);
+  }, [show]);
 
   // ── lock scroll while open ────────────────────────────────
   useEffect(() => {
@@ -99,17 +83,19 @@ export function CommandPalette() {
     return out;
   }, [navMatches, query]);
 
-  // keep highlight in range as rows shrink/grow
-  useEffect(() => {
-    setActive((a) => (rows.length === 0 ? 0 : Math.min(a, rows.length - 1)));
-  }, [rows.length]);
+  // keep highlight in range as rows shrink/grow (derived, not synced state)
+  const active = rows.length === 0 ? 0 : Math.min(activeRaw, rows.length - 1);
 
   const close = useCallback(() => setOpen(false), []);
 
   const runDispatch = useCallback(async (q: string) => {
     // Route anything that acts on the outside world to the Approval Inbox
     // instead of running it immediately.
-    const sideEffecting = /\b(post|tweet|send|dm|message|reply|email|buy|purchase|order|pay|transfer|withdraw|deposit|trade|delete|remove|publish|schedule|book|cancel|unsubscribe)\b/i.test(q);
+    // Server policy (src/lib/dispatch-policy.ts) plus the palette's broader
+    // keyword list, so this never asks for less approval than before.
+    const sideEffecting =
+      requiresApproval("oneshot", q) ||
+      /\b(post|tweet|send|dm|message|reply|email|buy|purchase|order|pay|transfer|withdraw|deposit|trade|delete|remove|publish|schedule|book|cancel|unsubscribe)\b/i.test(q);
     try {
       await fetch("/api/hermes/dispatch", {
         method: "POST",

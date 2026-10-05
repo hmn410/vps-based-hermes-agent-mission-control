@@ -337,7 +337,7 @@ function IdeaCard({ idea, onUpdate }: { idea: Idea; onUpdate: () => void }) {
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleReject()}
-            placeholder="Why reject? (helps INTEGGY learn)"
+            placeholder="Why reject? (helps Hermes learn)"
             className="flex-1 bg-[var(--surface-2)] border rounded-full px-3 py-2 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none transition-colors"
             style={{ borderColor: "color-mix(in srgb, var(--down) 28%, transparent)" }}
             autoFocus
@@ -453,9 +453,9 @@ export default function IdeasPage() {
         <div>
           <div className="eyebrow mb-2.5 flex items-center gap-1.5">
             <Lightbulb className="w-3.5 h-3.5" />
-            Ideas
+            Idea board
           </div>
-          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Idea Board</h1>
+          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">Ideas</h1>
           <p className="num text-[var(--text-4)] text-[12px] mt-3">{filtered.length} showing · {ideas.length} total</p>
         </div>
         <Button

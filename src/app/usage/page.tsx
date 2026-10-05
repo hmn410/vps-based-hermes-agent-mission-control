@@ -203,7 +203,7 @@ export default function UsagePage() {
   };
 
   const totals = data?.totals;
-  const allModels = data?.totals ? data.models : [];
+  const allModels = useMemo(() => (data?.totals ? data.models : []), [data]);
 
   const { active, minor, maxCost } = useMemo(() => {
     const active: ModelUsage[] = [];
@@ -240,10 +240,10 @@ export default function UsagePage() {
         <div>
           <div className="eyebrow mb-2.5 flex items-center gap-1.5">
             <Coins className="w-3.5 h-3.5" />
-            Usage
+            Tokens &amp; cost
           </div>
           <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-none text-[var(--text)]">
-            Token &amp; Cost Dashboard
+            Usage
           </h1>
           <p className="num text-[var(--text-4)] text-[12px] mt-3">
             {active.length} active model{active.length === 1 ? "" : "s"}

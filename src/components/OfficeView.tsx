@@ -24,7 +24,7 @@ interface Agent {
 // ── Desk layout ───────────────────────────────────────────
 const DESK_LAYOUT = [
   { agentId: "hermes",   label: "CEO Corner",    zone: "ceo" },
-  { agentId: "integgy",  label: "Ticket Queue",  zone: "team" },
+  { agentId: "integgy",  label: "Ops Desk",      zone: "team" },
   { agentId: "jbt",  label: "Build Desk",    zone: "team" },
   { agentId: "josh",  label: "Home Base",     zone: "team" },
   { agentId: "pixel", label: "Content Desk",  zone: "team" },

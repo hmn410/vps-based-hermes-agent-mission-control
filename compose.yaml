@@ -32,6 +32,10 @@ services:
       # .md files inside this root with conflict detection on save.
       # Directory (not file) mount, so Hermes' in-place or rename-based
       # writes are seen immediately (see the kanban-mirror note below).
+      # Hermy HQ saves atomically too (temp file + rename in the same dir),
+      # which a directory mount requires. The image runs as uid/gid
+      # 10000:10000, the owner of this directory, so it must stay writable
+      # by 10000 and new files land with the same owner as the rest.
       - /docker/hermes-agent-mnis/data/home/.hermes/wiki:/wiki
     depends_on:
       postgres:
