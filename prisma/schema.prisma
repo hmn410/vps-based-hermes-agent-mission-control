@@ -209,6 +209,9 @@ model HermesTask {
   blockedAt        DateTime?
   blockRecurrences Int       @default(0) // Hermes same-kind re-block counter (survives unblock)
   blockCount       Int       @default(0) // total block occurrences in the task's history
+  // Explicit human follow-ups from the latest completed run's metadata
+  // (hermes-bridge/follow-up.mjs contract). [] when none; never inferred from prose.
+  followUps        Json      @default("[]")
   updatedAt       DateTime  @default(now())
   syncedAt        DateTime  @updatedAt
 

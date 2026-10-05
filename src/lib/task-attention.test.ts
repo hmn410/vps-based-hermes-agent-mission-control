@@ -59,3 +59,13 @@ test("dependency wait does not need a human", () => {
   assert.equal(a.kind, "dependency");
   assert.equal(a.needsYou, false);
 });
+
+test("completed task with explicit follow-ups needs you and stays in Done", () => {
+  const a = deriveTaskAttention({ status: "done", followUps: ["Needs your confirmation: madewithkate.com", "Deploy required (VPS host)"] });
+  assert.equal(a.kind, "follow_up");
+  assert.equal(a.needsYou, true);
+  assert.equal(a.column, "done");
+  assert.equal(a.followUps.length, 2);
+  assert.equal(deriveTaskAttention({ status: "done", followUps: [] }).needsYou, false);
+  assert.equal(deriveTaskAttention({ status: "done", followUps: null }).kind, "none");
+});

@@ -13,7 +13,7 @@ test("finds a task's completed-event summary even when it is outside the live ev
       last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, block_recurrences INTEGER DEFAULT 0, current_step_key TEXT,
       last_failure_error TEXT
     );
-    CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, summary TEXT, ended_at INTEGER);
+    CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, outcome TEXT, summary TEXT, metadata TEXT, ended_at INTEGER);
     CREATE TABLE task_events (id INTEGER PRIMARY KEY, task_id TEXT, run_id INTEGER, kind TEXT, payload TEXT, created_at INTEGER);
   `);
   db.prepare("INSERT INTO tasks (id, title, status, priority) VALUES (?, ?, ?, ?)").run("t_old", "Older task", "done", 0);
@@ -39,7 +39,7 @@ test("excludes archived cards and keeps completed history in a stable newest-fir
       last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, block_recurrences INTEGER DEFAULT 0, current_step_key TEXT,
       last_failure_error TEXT
     );
-    CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, summary TEXT, ended_at INTEGER);
+    CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, outcome TEXT, summary TEXT, metadata TEXT, ended_at INTEGER);
     CREATE TABLE task_events (id INTEGER PRIMARY KEY, task_id TEXT, run_id INTEGER, kind TEXT, payload TEXT, created_at INTEGER);
   `);
   const insert = db.prepare("INSERT INTO tasks (id, title, status, priority, completed_at) VALUES (?, ?, ?, ?, ?)");
@@ -49,5 +49,26 @@ test("excludes archived cards and keeps completed history in a stable newest-fir
 
   const rows = readKanbanTaskRows(db);
   assert.deepEqual(rows.map((row) => row.id), ["t_new", "t_old"]);
+  db.close();
+});
+
+test("snapshot rows carry the latest completed run's metadata for follow-up extraction", () => {
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY, title TEXT, status TEXT, assignee TEXT, priority INTEGER, result TEXT,
+      started_at INTEGER, completed_at INTEGER, worker_pid INTEGER, worker_started_at TEXT,
+      last_heartbeat_at INTEGER, current_run_id INTEGER, block_kind TEXT, block_recurrences INTEGER DEFAULT 0, current_step_key TEXT,
+      last_failure_error TEXT
+    );
+    CREATE TABLE task_runs (id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, outcome TEXT, summary TEXT, metadata TEXT, ended_at INTEGER);
+    CREATE TABLE task_events (id INTEGER PRIMARY KEY, task_id TEXT, run_id INTEGER, kind TEXT, payload TEXT, created_at INTEGER);
+  `);
+  db.prepare("INSERT INTO tasks (id, title, status, priority, completed_at) VALUES (?, ?, ?, ?, ?)").run("t_done", "Done", "done", 0, 100);
+  const run = db.prepare("INSERT INTO task_runs (id, task_id, status, outcome, summary, metadata, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  run.run(1, "t_done", "blocked", "blocked", "blocked once", JSON.stringify({ needs_confirmation: ["stale"] }), 50);
+  run.run(2, "t_done", "done", "completed", "finished", JSON.stringify({ needs_confirmation: ["current"] }), 90);
+  const [row] = readKanbanTaskRows(db);
+  assert.equal(row.run_metadata, JSON.stringify({ needs_confirmation: ["current"] }));
   db.close();
 });

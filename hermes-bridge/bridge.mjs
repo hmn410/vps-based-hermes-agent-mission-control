@@ -41,6 +41,8 @@ import { kanbanCreateTask, kanbanGetBoard, kanbanGetTask, dashboardConfigured } 
 import { resolveMirroredTaskResult } from "./result-resolver.mjs";
 import { readKanbanTaskRows, readKanbanTaskEvents } from "./kanban-reader.mjs";
 import { deriveBlockState, needsBlockDetail } from "./block-state.mjs";
+import { extractFollowUps, latestCompletedRunMetadata } from "./follow-up.mjs";
+import { ACTIVE_DETAIL_STATUSES, createDetailCache, detailEvents, isTerminalStatus, mapLimit, mergeEventRows } from "./task-detail.mjs";
 import { enrichExecutionEventPayload } from "./execution-event.mjs";
 import { deriveAgentActivity, completedTaskCount } from "./agent-activity.mjs";
 import DatabaseConstructor from "better-sqlite3";
@@ -178,30 +180,64 @@ function readKanbanSnapshotTasks() {
   try {
     const rows = readKanbanTaskRows(db);
     for (const row of rows) {
-      row.block_state = needsBlockDetail(row) ? deriveBlockState(readKanbanTaskEvents(db, row.id)) : null;
+      row.block_state = needsBlockDetail(row) ? deriveBlockState(readKanbanTaskEvents(db, row.id), row.status) : null;
+      row.follow_ups = isTerminalStatus(row.status) ? extractFollowUps(row.run_metadata) : [];
     }
-    return rows;
+    return { rows, liveEvents: [] };
   } finally {
     db.close();
   }
 }
 
-// Current block reason/recurrence for parked tasks, from each task's FULL
-// canonical event list (GET /tasks/:id). The board listing has no events, and
-// `last_failure_error` is cleared by unblock — so without this a task that
-// re-blocks (Hermes routes the 2nd same-kind block to `triage` with
-// `block_loop_detected`) mirrored with no reason at all.
-async function attachBlockStates(rows) {
-  await Promise.all(
-    rows.filter(needsBlockDetail).map(async (t) => {
+// Per-task detail (GET /tasks/:id) is the canonical source for: full results
+// of finished cards, the CURRENT block reason/recurrence (the board listing has
+// no events and `last_failure_error` is cleared by unblock, so a re-blocked
+// task — Hermes routes the 2nd same-kind block to `triage` with
+// `block_loop_detected` — would otherwise mirror with no reason), explicit
+// completion follow-ups (run metadata), and live per-task activity.
+//
+// Cost bound: a card is fetched only when it is terminal, parked on a block
+// (needsBlockDetail), or active (running/review/ready) AND its board signature
+// changed or its cache TTL lapsed; at most DETAIL_CONCURRENCY in flight.
+const DETAIL_CONCURRENCY = Number(process.env.BRIDGE_DETAIL_CONCURRENCY || 4);
+const detailCache = createDetailCache();
+
+function wantsDetail(t) {
+  const status = String(t.status || "").toLowerCase();
+  return isTerminalStatus(status) || needsBlockDetail(t) || ACTIVE_DETAIL_STATUSES.has(status);
+}
+
+async function attachTaskDetails(rows) {
+  const liveEvents = [];
+  let fetched = 0;
+  await mapLimit(rows.filter(wantsDetail), DETAIL_CONCURRENCY, async (t) => {
+    let full = detailCache.get(t);
+    if (!full) {
       try {
-        const full = await kanbanGetTask(t.id);
-        t.block_state = deriveBlockState(Array.isArray(full?.events) ? full.events : []);
+        full = await kanbanGetTask(t.id);
+        detailCache.set(t, full);
+        fetched += 1;
       } catch (e) {
-        log("kanban block-state fetch err", t.id, e.message);
+        log("kanban task detail fetch err", t.id, e.message);
+        return;
       }
-    })
-  );
+    }
+    const events = detailEvents(t.id, full);
+    if (isTerminalStatus(t.status)) {
+      const runSummary = full?.runs?.[full.runs.length - 1]?.summary;
+      const fullAnswer = full?.task?.result || full?.task?.latest_summary || runSummary;
+      if (fullAnswer) t.result = fullAnswer;
+      t.follow_ups = extractFollowUps(latestCompletedRunMetadata(full?.runs));
+    } else {
+      // Live activity for in-flight cards comes straight from the canonical
+      // per-task list, so comments/status moves are never starved out of a
+      // heartbeat-dominated global window or lagged by the 1-min snapshot.
+      liveEvents.push(...events.slice(-60));
+    }
+    if (needsBlockDetail(t)) t.block_state = deriveBlockState(events, t.status);
+  });
+  detailCache.retain(rows.map((t) => t.id));
+  return { liveEvents, fetched };
 }
 
 async function readKanbanTasks() {
@@ -211,42 +247,28 @@ async function readKanbanTasks() {
   // default. Preserve its lifecycle-column order while flattening for HQ's
   // Postgres projection.
   const rows = (board?.columns || []).flatMap((column) => column.tasks || []);
-  // The board-listing endpoint returns a short RESULT PREVIEW per card (for
-  // compact board display), not the full answer — that preview (~200 chars)
-  // is what was leaking into the website's dispatch answers, truncating them
-  // mid-sentence. The full answer actually lives in the task detail's
-  // `latest_summary` / `runs[].summary` (kanban_complete's summary field,
-  // not task.result, which stays null unless a worker sets it explicitly).
-  // For finished tasks, fetch the canonical full detail so the mirror (and
-  // the dispatch chat downstream) gets the complete answer.
-  const TERMINAL = new Set(["done", "completed", "archived"]);
-  await Promise.all(
-    rows
-      .filter((t) => TERMINAL.has(String(t.status || "").toLowerCase()))
-      .map(async (t) => {
-        try {
-          const full = await kanbanGetTask(t.id);
-          const runSummary = full?.runs?.[full.runs.length - 1]?.summary;
-          const fullAnswer = full?.task?.result || full?.task?.latest_summary || runSummary;
-          if (fullAnswer) t.result = fullAnswer;
-        } catch (e) {
-          log("kanban full-task fetch err", t.id, e.message);
-        }
-      })
-  );
-  await attachBlockStates(rows);
-  return rows;
+  // The board-listing endpoint returns a short RESULT PREVIEW per card (~200
+  // chars); attachTaskDetails() swaps in the full answer for finished cards.
+  const { liveEvents } = await attachTaskDetails(rows);
+  return { rows, liveEvents };
 }
-// Recent task_events (claimed/spawned/heartbeat/commented/completed/blocked/...)
-// — the live "what's it doing" feed. Kanban timestamps are unix seconds.
-function readKanbanEvents(limit = 150) {
+// Recent task_events from the read-only snapshot — the global "what's it
+// doing" feed. Heartbeats are ~1/min per worker and used to fill the whole
+// newest-150 window, starving comments/status/block events. Read lifecycle
+// events and heartbeats in separate bounded windows instead.
+function readKanbanEvents({ lifecycleLimit = 300, heartbeatLimit = 60 } = {}) {
   if (!fs.existsSync(KANBAN_DB_PATH)) throw new Error(`kanban snapshot missing: ${KANBAN_DB_PATH}`);
   const db = new DatabaseConstructor(KANBAN_DB_PATH, { readonly: true, fileMustExist: true });
   try {
-    return db.prepare(
+    const lifecycle = db.prepare(
       `SELECT id, task_id, run_id, kind, payload, created_at
-       FROM task_events ORDER BY id DESC LIMIT ?`
-    ).all(limit);
+       FROM task_events WHERE kind != 'heartbeat' ORDER BY id DESC LIMIT ?`
+    ).all(lifecycleLimit);
+    const heartbeats = db.prepare(
+      `SELECT id, task_id, run_id, kind, payload, created_at
+       FROM task_events WHERE kind = 'heartbeat' ORDER BY id DESC LIMIT ?`
+    ).all(heartbeatLimit);
+    return [...lifecycle, ...heartbeats].sort((a, b) => b.id - a.id);
   } finally {
     db.close();
   }
@@ -304,7 +326,8 @@ async function syncAgentStates(rows) {
 
 async function mirrorKanban() {
   let rows;
-  try { rows = await readKanbanTasks(); } catch (e) {
+  let liveEvents = [];
+  try { ({ rows, liveEvents } = await readKanbanTasks()); } catch (e) {
     log("kanban read err", e.message);
     await updateKanbanMirror({
       availability: "unavailable",
@@ -321,22 +344,26 @@ async function mirrorKanban() {
   try { await syncAgentStates(rows); } catch (e) { log("syncAgentStates err", e.message); }
   let events;
   try {
-    events = readKanbanEvents();
+    // Live per-task detail events (dashboard, current) + the snapshot's bounded
+    // global windows (<=1 min old), deduped by canonical id, newest first.
+    events = mergeEventRows(liveEvents, readKanbanEvents());
     await updateKanbanMirror({
       availability: "available",
       eventAvailability: "available",
       lastSuccessfulEventReadAt: new Date().toISOString(),
-      newestEventId: events[0]?.id ?? null,
+      newestEventId: events.reduce((max, e) => Math.max(max, e.id), 0) || null,
       eventError: null,
     });
   } catch (e) {
     log("kanban events read err", e.message);
+    events = mergeEventRows(liveEvents);
     await updateKanbanMirror({
-      availability: "unavailable",
-      eventAvailability: "unavailable",
+      // Live per-task events still flow when only the snapshot is missing.
+      availability: events.length ? "available" : "unavailable",
+      eventAvailability: events.length ? "available" : "unavailable",
+      ...(events.length ? { lastSuccessfulEventReadAt: new Date().toISOString(), newestEventId: events[0].id } : {}),
       eventError: boundedError(e),
     });
-    events = [];
   }
   const eventsByTask = new Map();
   for (const event of events) {
@@ -351,8 +378,9 @@ async function mirrorKanban() {
           "startedAt", "completedAt", "workerPid", "workerStartedAt",
           "lastHeartbeatAt", "currentRunId", "blockKind", "currentStepKey",
           "lastFailureError", "blockReason", "blockEventKind", "blockedAt", "blockRecurrences", "blockCount",
+          "followUps",
           "updatedAt", "syncedAt")
-       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, $15, $16,$17,$18,$19,$20, now(), now())
+       VALUES ($1,'default',$2,$3,$4,$5,$6, $7,$8,$9,$10,$11,$12,$13,$14, $15, $16,$17,$18,$19,$20, $21::jsonb, now(), now())
        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, assignee=EXCLUDED.assignee,
          status=EXCLUDED.status, priority=EXCLUDED.priority, result=EXCLUDED.result,
          "startedAt"=EXCLUDED."startedAt", "completedAt"=EXCLUDED."completedAt",
@@ -363,6 +391,9 @@ async function mirrorKanban() {
          "blockReason"=EXCLUDED."blockReason", "blockEventKind"=EXCLUDED."blockEventKind",
          "blockedAt"=EXCLUDED."blockedAt", "blockRecurrences"=EXCLUDED."blockRecurrences",
          "blockCount"=EXCLUDED."blockCount",
+         -- A detail fetch that failed this tick leaves follow_ups undefined:
+         -- keep the last known value rather than wiping a pending follow-up.
+         "followUps"=CASE WHEN $22::boolean THEN EXCLUDED."followUps" ELSE "HermesTask"."followUps" END,
          "updatedAt"=now(), "syncedAt"=now()`,
       [
         t.id, t.title, t.assignee, t.status, t.priority ?? 0,
@@ -376,6 +407,8 @@ async function mirrorKanban() {
         t.last_failure_error ?? null,
         t.block_state?.blockReason ?? null, t.block_state?.blockEventKind ?? null,
         toDate(t.block_state?.blockedAt), Number(t.block_recurrences || 0), t.block_state?.blockCount ?? 0,
+        JSON.stringify(Array.isArray(t.follow_ups) ? t.follow_ups : []),
+        Array.isArray(t.follow_ups) || !isTerminalStatus(t.status),
       ]
     );
   }
@@ -391,18 +424,36 @@ async function mirrorKanban() {
   await q(`DELETE FROM "HermesTask" WHERE board='default' AND NOT (id = ANY($1::text[]))`, [ids]);
 
   const tasksById = new Map(rows.map((task) => [task.id, task]));
-  for (const e of events) {
-    const task = tasksById.get(e.task_id) || {};
+  // One batched upsert per tick (events can number a few hundred). Upsert, not
+  // DO NOTHING: a live detail row may carry a richer payload (comment preview)
+  // than the first snapshot copy of the same canonical event id.
+  if (events.length) {
     await q(
       `INSERT INTO "HermesTaskEvent" (id, "taskId", "runId", kind, payload, "createdAt", "syncedAt")
-       VALUES ($1,$2,$3,$4,$5,$6, now())
-       ON CONFLICT (id) DO NOTHING`,
-      [e.id, e.task_id, e.run_id ?? null, e.kind, enrichExecutionEventPayload(e, task), toDate(e.created_at)]
+       SELECT u.id, u.task_id, u.run_id, u.kind, u.payload, u.created_at, now()
+       FROM unnest($1::int[], $2::text[], $3::int[], $4::text[], $5::text[], $6::timestamptz[])
+         AS u(id, task_id, run_id, kind, payload, created_at)
+       ON CONFLICT (id) DO UPDATE SET payload=EXCLUDED.payload
+         WHERE COALESCE(length("HermesTaskEvent".payload), 0) < COALESCE(length(EXCLUDED.payload), 0)`,
+      [
+        events.map((e) => e.id),
+        events.map((e) => e.task_id),
+        events.map((e) => e.run_id ?? null),
+        events.map((e) => e.kind),
+        events.map((e) => enrichExecutionEventPayload(e, tasksById.get(e.task_id) || {})),
+        events.map((e) => toDate(e.created_at)),
+      ]
     );
   }
-  // Keep the mirrored event log bounded — prune anything older than the newest 500.
+  // Keep the mirrored event log bounded, per kind class, so heartbeats can
+  // never evict lifecycle history: newest 1500 non-heartbeat + 200 heartbeat.
   await q(
-    `DELETE FROM "HermesTaskEvent" WHERE id NOT IN (SELECT id FROM "HermesTaskEvent" ORDER BY id DESC LIMIT 500)`
+    `DELETE FROM "HermesTaskEvent" WHERE kind <> 'heartbeat' AND id NOT IN
+       (SELECT id FROM "HermesTaskEvent" WHERE kind <> 'heartbeat' ORDER BY id DESC LIMIT 1500)`
+  );
+  await q(
+    `DELETE FROM "HermesTaskEvent" WHERE kind = 'heartbeat' AND id NOT IN
+       (SELECT id FROM "HermesTaskEvent" WHERE kind = 'heartbeat' ORDER BY id DESC LIMIT 200)`
   );
 }
 

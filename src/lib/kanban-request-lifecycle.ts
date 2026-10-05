@@ -18,6 +18,7 @@ type TaskLike = {
   blockRecurrences?: number | null;
   blockCount?: number | null;
   lastFailureError?: string | null;
+  followUps?: unknown;
   syncedAt?: Date | null;
 };
 
@@ -87,7 +88,13 @@ export function deriveRequestLifecycle(
 
   const taskStatus = task.status.toLowerCase();
   if (["done", "completed", "archived"].includes(taskStatus)) {
-    return { ...base, status: "done", label: "Done", queueAgeMs: null, dispatcherAttention: false, blockerReason: null, attention: null };
+    // A completed task can still need Josh (explicit completion follow-ups).
+    const doneAttention = deriveTaskAttention(task);
+    const followUp = doneAttention.kind === "follow_up";
+    return {
+      ...base, status: "done", label: followUp ? doneAttention.label : "Done", queueAgeMs: null,
+      dispatcherAttention: false, blockerReason: null, attention: followUp ? doneAttention : null,
+    };
   }
   const attention = deriveTaskAttention(task);
   // Needs a human — including Hermes' 2nd same-kind block, which lands in

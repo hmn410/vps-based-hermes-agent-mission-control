@@ -12,6 +12,9 @@ export function readKanbanTaskRows(db, limit = 200) {
             (SELECT summary FROM task_runs
              WHERE task_id = tasks.id AND status IN ('done', 'completed')
              ORDER BY ended_at DESC, id DESC LIMIT 1) AS run_summary,
+            (SELECT metadata FROM task_runs
+             WHERE task_id = tasks.id AND (outcome = 'completed' OR status IN ('done', 'completed'))
+             ORDER BY ended_at DESC, id DESC LIMIT 1) AS run_metadata,
             (SELECT payload FROM task_events
              WHERE task_id = tasks.id AND kind = 'completed'
              ORDER BY id DESC LIMIT 1) AS completed_event_payload

@@ -15,8 +15,24 @@
 
 export const BLOCK_EVENT_KINDS = new Set(["blocked", "block_loop_detected", "gave_up", "dependency_wait"]);
 // Lifecycle events after which an earlier block is no longer the current state.
-// (`specified` is NOT one: the auto-specifier edits a triaged card in place.)
-const CLEARING_KINDS = new Set(["unblocked", "promoted", "claimed", "completed", "review_requested", "archived"]);
+// `status` = dashboard drag / direct move and ancestor-reopen invalidation;
+// `promoted_manual`, `reclaimed`, `changes_requested`, `review_reopened` all
+// move the card out of the parked lane. (`specified` is NOT one: the
+// auto-specifier edits a triaged card in place; the status check below covers
+// a specify that moves triage -> todo without a following `promoted`.)
+const CLEARING_KINDS = new Set([
+  "unblocked", "promoted", "promoted_manual", "claimed", "completed", "review_requested",
+  "archived", "status", "reclaimed", "changes_requested", "review_reopened",
+]);
+// The task status each block event leaves behind (hermes_cli/kanban_db.py
+// _route_block / failure breaker). If the task is no longer in that status, the
+// block has been resolved by some path we did not see an event for.
+const STATUS_AFTER_BLOCK = {
+  blocked: "blocked",
+  block_loop_detected: "triage",
+  gave_up: "blocked",
+  dependency_wait: "todo",
+};
 // Events that count as a human-relevant block occurrence in the history.
 const BLOCK_OCCURRENCE_KINDS = new Set(["blocked", "block_loop_detected", "gave_up"]);
 
@@ -45,7 +61,7 @@ function reasonFrom(kind, payload) {
  *   blockedAt is unix seconds (kanban convention). blockCount = total block
  *   occurrences in the task's history (blocked + block_loop_detected + gave_up).
  */
-export function deriveBlockState(events = []) {
+export function deriveBlockState(events = [], currentStatus = null) {
   const ordered = [...events].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
   let latest = null;
   let blockCount = 0;
@@ -55,6 +71,10 @@ export function deriveBlockState(events = []) {
     // A later lifecycle move means the earlier block is history, not current.
     else if (latest && CLEARING_KINDS.has(event.kind)) latest = null;
   }
+  // Only trust the block as current while the task still sits where that block
+  // put it (e.g. a loop-triaged card re-specified into `todo` is no longer blocked).
+  const status = currentStatus == null ? null : String(currentStatus).toLowerCase();
+  if (latest && status && STATUS_AFTER_BLOCK[latest.kind] && STATUS_AFTER_BLOCK[latest.kind] !== status) latest = null;
   if (!latest) return { blockReason: null, blockEventKind: null, blockedAt: null, blockCount };
   const payload = parsePayload(latest.payload);
   return {
@@ -67,11 +87,14 @@ export function deriveBlockState(events = []) {
 
 // Statuses where a block reason is (or may be) the current state. A running/
 // ready/done card keeps its historical block_kind, but its block is over.
-const PARKED_STATUSES = new Set(["blocked", "triage", "todo"]);
-
+// `todo` only parks on a block via dependency_wait (block_kind='dependency');
+// a todo card with a stale needs_input/capability kind is NOT fetched — that
+// bounds the per-task detail fan-out for long-lived todo backlogs.
 /** True when the bridge should fetch/derive block detail for this task. */
 export function needsBlockDetail(task) {
   const status = String(task?.status || "").toLowerCase();
   if (status === "blocked") return true;
-  return PARKED_STATUSES.has(status) && (Boolean(task?.block_kind) || Number(task?.block_recurrences || 0) > 0);
+  if (status === "triage") return Boolean(task?.block_kind) || Number(task?.block_recurrences || 0) > 0;
+  if (status === "todo") return task?.block_kind === "dependency";
+  return false;
 }
