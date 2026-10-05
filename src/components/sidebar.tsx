@@ -16,6 +16,7 @@ import {
   Coins,
   Activity,
   MessageSquare,
+  BookOpen,
 } from "lucide-react";
 
 const navGroups = [
@@ -33,6 +34,7 @@ const navGroups = [
   {
     name: "Workspace",
     items: [
+      { href: "/wiki", label: "Wiki", icon: BookOpen },
       { href: "/agents", label: "Agents", icon: Bot },
       { href: "/ideas", label: "Ideas", icon: Lightbulb },
     ],
