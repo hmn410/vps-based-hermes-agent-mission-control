@@ -371,9 +371,11 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
   }, []);
 
   useEffect(() => {
-    load();
+    // First fetch is scheduled (not called synchronously in the effect body)
+    // to satisfy react-hooks/set-state-in-effect.
+    const first = setTimeout(load, 0);
     const iv = setInterval(load, 6000);
-    return () => clearInterval(iv);
+    return () => { clearTimeout(first); clearInterval(iv); };
   }, [load]);
 
   // optimistic removal, then refetch to reconcile
