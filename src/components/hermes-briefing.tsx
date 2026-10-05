@@ -7,8 +7,9 @@
    ─────────────────────────────────────────────────────────── */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sunrise, RefreshCw, ArrowUpRight } from "lucide-react";
+import { Sunrise, RefreshCw, ArrowUpRight, CalendarClock } from "lucide-react";
 import { Panel, Eyebrow, Button } from "@/components/ui/kit";
+import { UpcomingWorkdayEditor } from "@/components/upcoming-workday-editor";
 
 interface Section { label: string; items: string[] }
 interface Briefing {
@@ -41,6 +42,7 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
   const [pending, setPending] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const genAt = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -90,12 +92,18 @@ export function HermesBriefing({ className = "" }: { className?: string }) {
               {pending} need{pending === 1 ? "s" : ""} you <ArrowUpRight className="w-3 h-3" />
             </a>
           )}
+          <Button variant="ghost" size="sm" onClick={() => setPlanning((p) => !p)}>
+            <CalendarClock className="w-3.5 h-3.5" />
+            Plan workday
+          </Button>
           <Button variant="ghost" size="sm" onClick={generate} disabled={generating}>
             <RefreshCw className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
             {generating ? "Generating…" : "Generate"}
           </Button>
         </div>
       </div>
+
+      {planning && <UpcomingWorkdayEditor onClose={() => setPlanning(false)} />}
 
       {empty ? (
         <div className="py-6 text-center">

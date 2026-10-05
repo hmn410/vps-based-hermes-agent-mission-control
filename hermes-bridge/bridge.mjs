@@ -52,7 +52,9 @@ const RUN_TIMEOUT_MS = Number(process.env.BRIDGE_RUN_TIMEOUT_MS || 900000);
 const KANBAN_DB_PATH = process.env.KANBAN_DB_PATH || "/hermes-ro/kanban.db";
 if (!API_KEY) { console.error("HERMES_API_KEY is required (matches API_SERVER_KEY on the Hermes container)"); process.exit(1); }
 
-const BRIEF_HOUR = Number(process.env.BRIEF_HOUR || 8); // local hour to auto-generate the daily brief
+const BRIEF_HOUR = Number(process.env.BRIEF_HOUR || 8); // America/Chicago hour to auto-generate the daily brief
+const BRIEF_TIME_ZONE = "America/Chicago";
+const UPCOMING_WORKDAY_KEY = "upcoming-workday-input";
 const BRIEF_PROMPT =
   "You are the operator's chief of staff for personal life and JoshBuilds.Tech. Produce today's morning brief. " +
   "Read the kanban board and recent activity if available to you as tools. Do not invent work-account data or claim inbox/calendar access. " +
@@ -136,6 +138,11 @@ async function setStore(key, data) {
      ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, "updatedAt" = now()`,
     [key, JSON.stringify(data)]
   );
+}
+
+async function getStore(key) {
+  const { rows } = await q(`SELECT data FROM "DataStore" WHERE key=$1`, [key]);
+  return rows[0]?.data ?? null;
 }
 
 async function mirrorHealth() {
@@ -377,6 +384,39 @@ async function mirrorKanban() {
 }
 
 /* ─────────────── Chief-of-staff daily brief ─────────────── */
+function chicagoDay(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BRIEF_TIME_ZONE, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
+  }).formatToParts(date).reduce((out, p) => ({ ...out, [p.type]: p.value }), {});
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, weekday: parts.weekday, hour: Number(parts.hour) };
+}
+function missing(value, label) { return value ? String(value) : `Missing input: ${label}.`; }
+function manualUpcomingSection(input, todayDate) {
+  const source = input && typeof input === "object" ? input : {};
+  // A plan saved for another day is stale — don't show it as today's.
+  if (!source.forDate || source.forDate !== todayDate) {
+    return { label: "Upcoming Workday", items: [
+      "No plan saved for today. Use \"Plan workday\" on the brief to add commitments, top 3 priorities, focus blocks, risks, and prep.",
+    ] };
+  }
+  const commitments = Array.isArray(source.fixedCommitments) ? source.fixedCommitments : [];
+  const priorities = Array.isArray(source.priorities) ? source.priorities.filter(Boolean).slice(0, 3) : [];
+  const focusBlocks = Array.isArray(source.focusBlocks) ? source.focusBlocks.filter(Boolean) : [];
+  const risks = Array.isArray(source.risks) ? source.risks.filter(Boolean) : [];
+  const prep = Array.isArray(source.prepTonight) ? source.prepTonight.filter(Boolean) : [];
+  return { label: "Upcoming Workday", items: [
+    "Fixed commitments:",
+    ...(commitments.length ? commitments.map((c) => {
+      if (typeof c === "string") return `${c} — Missing input: time, location, travel duration, and deadline constraint unless supplied separately.`;
+      const title = missing(c?.title, "commitment title");
+      return `${title} | time: ${missing(c?.time, "time")} | location: ${missing(c?.location, "location")} | travel: ${missing(c?.travelMinutes, "travel duration")} | deadline: ${missing(c?.deadline, "deadline constraint")}`;
+    }) : ["Missing input: fixed commitments (or state none)."]),
+    "Top 3 work priorities:", ...(priorities.length ? priorities : ["Missing input: up to three outcome-based priorities."]),
+    "Focus blocks:", ...(focusBlocks.length ? focusBlocks : ["Assumption: no focus-block windows were supplied; choose deep-work, follow-up, and admin windows around fixed commitments after times are provided."]),
+    "Risks/conflicts:", ...(risks.length ? risks : ["Missing input: conflicts, prep/travel constraints, or state none known."]),
+    "Prep tonight:", ...(prep.length ? prep : ["Missing input: documents, decisions, materials, or reminders to prepare tonight (or state none)."]),
+  ] };
+}
 async function generateBriefing() {
   const raw = (await hermesChat(BRIEF_PROMPT)).trim();
   let brief;
@@ -385,15 +425,24 @@ async function generateBriefing() {
     const m = jsonStr.match(/\{[\s\S]*\}/);
     brief = JSON.parse(m ? m[0] : jsonStr);
   } catch { brief = { summary: raw.slice(0, 1500), sections: [] }; }
+  const chicago = chicagoDay();
+  brief.sections = Array.isArray(brief.sections) ? brief.sections.filter((section) => section?.label !== "Upcoming Workday") : [];
+  // Deterministic, personal-only manual data; never rendered on weekends.
+  if (!new Set(["Sat", "Sun"]).has(chicago.weekday)) {
+    let input = null;
+    try { input = await getStore(UPCOMING_WORKDAY_KEY); } catch (e) { log("upcoming workday input read err", e.message); }
+    brief.sections.push(manualUpcomingSection(input, chicago.date));
+  }
   brief.generatedAt = new Date().toISOString();
+  brief.timeZone = BRIEF_TIME_ZONE;
+  brief.briefDate = chicago.date;
   await setStore("hermes-briefing", brief);
   await emit("status", "Daily brief generated", { level: "up" });
 }
 async function maybeDailyBrief() {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  if (now.getHours() >= BRIEF_HOUR && lastBriefDate !== today) {
-    lastBriefDate = today;
+  const chicago = chicagoDay();
+  if (chicago.hour >= BRIEF_HOUR && lastBriefDate !== chicago.date) {
+    lastBriefDate = chicago.date;
     try { await generateBriefing(); } catch (e) { log("daily brief err", e.message); }
   }
 }
