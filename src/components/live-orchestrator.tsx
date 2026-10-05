@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionHeader, Panel, Pill, EmptyState, Skeleton } from "@/components/ui/kit";
 import { Cpu, Activity, ExternalLink } from "lucide-react";
 import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
-import { activeTasks, activityForTask, describeExecutionEvent, type TelemetryHealth } from "@/lib/live-work";
+import { activeTasks, activityForTask, describeExecutionEvent, mergeTaskEvents, type TelemetryHealth } from "@/lib/live-work";
+import { deriveTaskAttention } from "@/lib/task-attention";
 
 const LIVE_REFRESH_MS = 1500;
 
@@ -13,6 +14,7 @@ interface LiveTask {
   result: string | null; startedAt: string | null; completedAt: string | null; workerPid: number | null;
   workerStartedAt: string | null; lastHeartbeatAt: string | null; currentRunId: number | null;
   blockKind: string | null; currentStepKey: string | null; lastFailureError: string | null; syncedAt: string;
+  blockReason?: string | null; blockEventKind?: string | null; blockRecurrences?: number | null; blockCount?: number | null; blockedAt?: string | null;
 }
 interface TaskEvent { id: number; taskId: string; runId: number | null; kind: string; payload: string | null; createdAt: string; title?: string; taskLabel?: string }
 
@@ -44,7 +46,9 @@ function formatEvent(e: TaskEvent): { icon: string; text: string; tone: Tone } {
     case "heartbeat": return { icon: "♥", text: describeExecutionEvent("heartbeat", e.payload), tone: "accent" };
     case "completed": return { icon: "✓", text: p.summary ? `Completed — ${String(p.summary).slice(0, 140)}` : "Completed", tone: "up" };
     case "blocked": return { icon: "⛔", text: p.reason ? `Blocked (${p.kind || "blocker"}) — ${String(p.reason).slice(0, 140)}` : "Blocked", tone: "down" };
-    case "block_loop_detected": return { icon: "⛔", text: p.reason ? `Still blocked — ${String(p.reason).slice(0, 140)}` : "Blocked again", tone: "down" };
+    case "block_loop_detected": return { icon: "⛔", text: `Blocked again${p.recurrences ? ` (${p.recurrences}×)` : ""} — needs you${p.reason ? `: ${String(p.reason).slice(0, 140)}` : ""}`, tone: "down" };
+    case "dependency_wait": return { icon: "⧗", text: "Waiting on parent task", tone: "neutral" };
+    case "review_requested": return { icon: "◎", text: "Handed off for review", tone: "warn" };
     case "unblocked": return { icon: "↻", text: "Unblocked — resuming", tone: "accent" };
     case "gave_up": return { icon: "⚠", text: "Gave up after repeated blocks", tone: "down" };
     case "crashed": return { icon: "✕", text: `Worker crashed${p.error ? `: ${String(p.error).slice(0, 140)}` : ""}`, tone: "down" };
@@ -61,12 +65,14 @@ function EventLine({ event, global = false }: { event: TaskEvent; global?: boole
   </div>;
 }
 function LiveTaskCard({ task, events, expanded, telemetryAvailable }: { task: LiveTask; events: TaskEvent[]; expanded: boolean; telemetryAvailable: boolean }) {
-  const meta = statusMeta(task.status); const running = normStatus(task.status).includes("running");
+  const attention = deriveTaskAttention(task);
+  const base = statusMeta(task.status);
+  const meta = attention.needsYou ? { label: attention.label, tone: "down" as Tone } : base; const running = normStatus(task.status).includes("running");
   return <Panel className="p-4"><div className="flex items-start gap-3"><span className="relative flex w-2 h-2 mt-1.5 shrink-0">{running && <span className="absolute inline-flex h-full w-full rounded-full animate-ping" style={{ background: "color-mix(in srgb, var(--accent) 60%, transparent)" }} />}<span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: `var(--${meta.tone === "neutral" ? "text-3" : meta.tone})` }} /></span><div className="flex-1 min-w-0">
     <p className="text-[13.5px] text-[var(--text)] leading-snug">{task.title}</p><p className="num text-[10.5px] text-[var(--text-4)] mt-1">{task.id}</p>
     <div className="flex items-center gap-2 flex-wrap mt-2"><Pill tone={meta.tone}>{meta.label}</Pill>{task.assignee && <span className="num text-[10.5px] text-[var(--text-3)]">Worker: {task.assignee}</span>}{task.currentRunId != null && <span className="num text-[10.5px] text-[var(--text-3)]">run #{task.currentRunId}</span>}{task.workerPid != null && <span className="num text-[10.5px] text-[var(--text-3)] inline-flex items-center gap-1"><Cpu className="w-3 h-3" />pid {task.workerPid}</span>}{task.lastHeartbeatAt && <span className="num text-[10.5px] text-[var(--text-3)]">♥ {ago(task.lastHeartbeatAt)}</span>}</div>
     {task.currentStepKey && <p className="mt-2.5 text-[11.5px] text-[var(--text-2)]">Current step: {task.currentStepKey}</p>}
-    {(task.blockKind || task.lastFailureError) && <p className="mt-2 text-[11.5px] text-[var(--down)]">{task.blockKind ? `Blocker (${task.blockKind})` : "Failure"}: {task.lastFailureError || "Awaiting resolution"}</p>}
+    {(() => { const a = attention; return (a.needsYou || a.kind === "dependency" || task.lastFailureError) ? <div className={`mt-2 text-[11.5px] ${a.needsYou ? "text-[var(--down)]" : "text-[var(--text-3)]"}`}><span className="font-semibold">{a.needsYou ? `Needs you · ${a.label}` : a.kind === "dependency" ? a.label : "Last failure"}</span>{a.recurrences >= 2 && a.kind !== "repeat_block" ? ` · blocked ${a.recurrences}×` : ""}{(a.reason || (!a.needsYou && task.lastFailureError)) ? <>: <span className="text-[var(--text-2)]">{a.reason || task.lastFailureError}</span></> : a.needsYou ? ": awaiting resolution" : null}</div> : null; })()}
     {events.length ? <div className={`mt-3 border-t border-[var(--line)] pt-2.5 flex flex-col gap-1.5 overflow-y-auto pr-1 ${expanded ? "max-h-[260px]" : "max-h-[150px]"}`} aria-label={`Latest ${expanded ? 50 : 5} task events; scroll for more`}>{events.slice(0, expanded ? 50 : 5).map((e) => <EventLine key={e.id} event={e} />)}</div> : <p className={`mt-2.5 text-[11px] ${telemetryAvailable ? "text-[var(--text-4)]" : "text-[var(--down)]"}`}>{telemetryAvailable ? "No task events recorded yet" : "Execution telemetry unavailable"}</p>}
   </div></div></Panel>;
 }
@@ -77,7 +83,8 @@ function TelemetryNotice({ telemetry }: { telemetry: TelemetryHealth | null }) {
 }
 export function LiveOrchestrator({ expanded = false }: { expanded?: boolean }) {
   const [tasks, setTasks] = useState<LiveTask[]>([]); const [events, setEvents] = useState<TaskEvent[]>([]); const [feed, setFeed] = useState<TaskEvent[]>([]); const [telemetry, setTelemetry] = useState<TelemetryHealth | null>(null); const [loaded, setLoaded] = useState(false); const [snapshotStale, setSnapshotStale] = useState(false); const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null); const [now, setNow] = useState(Date.now()); const lastTasks = useRef<LiveTask[]>([]);
-  const load = useCallback(async () => { try { const r = await fetch("/api/hermes/tasks"); if (r.ok) { const d = await r.json(); const snapshot = keepLastKnownSnapshot(lastTasks.current, d.tasks ?? [], d.confirmedEmpty === true); lastTasks.current = snapshot.items; setTasks(snapshot.items); setSnapshotStale(snapshot.stale); if (!snapshot.stale) setEvents(Array.isArray(d.events) ? d.events : []); setFeed(Array.isArray(d.feed) ? d.feed : []); setTelemetry(d.telemetry ?? null); } } catch { /* keep last known data */ } finally { setLoaded(true); setNextRefreshAt(Date.now() + LIVE_REFRESH_MS); } }, []);
+  const load = useCallback(async () => { try { const r = await fetch("/api/hermes/tasks"); if (r.ok) { const d = await r.json(); const snapshot = keepLastKnownSnapshot(lastTasks.current, d.tasks ?? [], d.confirmedEmpty === true); lastTasks.current = snapshot.items; setTasks(snapshot.items); setSnapshotStale(snapshot.stale); // Events are merged (dedupe by id, newest-first) independently of task-snapshot staleness, so new comments/heartbeats always land and an empty/truncated poll never erases them.
+setEvents((prev) => mergeTaskEvents(prev, Array.isArray(d.events) ? d.events : [])); setFeed((prev) => mergeTaskEvents(prev, Array.isArray(d.feed) ? d.feed : [], 300)); setTelemetry(d.telemetry ?? null); } } catch { /* keep last known data */ } finally { setLoaded(true); setNextRefreshAt(Date.now() + LIVE_REFRESH_MS); } }, []);
   useEffect(() => { load(); const iv = setInterval(load, LIVE_REFRESH_MS); const clock = setInterval(() => setNow(Date.now()), 250); return () => { clearInterval(iv); clearInterval(clock); }; }, [load]);
   const active = activeTasks(tasks).sort((a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()); const runningCount = tasks.filter((t) => normStatus(t.status).includes("running")).length; const refreshIn = nextRefreshAt == null ? null : Math.max(0, Math.ceil((nextRefreshAt - now) / 1000));
   return <div><SectionHeader label="Live" title="What the orchestrator is doing right now" action={<span className="inline-flex items-center gap-1.5 num text-[11px] text-[var(--text-3)]"><Activity className="w-3.5 h-3.5" style={{ color: runningCount ? "var(--accent)" : undefined }} />{snapshotStale ? "showing last successful task snapshot" : runningCount ? `${runningCount} running` : "idle"}{refreshIn != null ? ` · refresh ${refreshIn}s` : ""}</span>} />

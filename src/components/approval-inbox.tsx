@@ -30,11 +30,60 @@ interface Req {
   createdAt: string;
 }
 
+export interface FollowUpTask {
+  id: string;
+  title: string;
+  label?: string;
+  followUps: string[];
+  completedAt?: string | null;
+  updatedAt: string;
+}
+
+// Completed task whose kanban_complete metadata explicitly asked Josh to do
+// something (follow-up.mjs). Informational: no Unblock — the work is done; the
+// card links to the originating task.
+export function FollowUpCard({ task, compact }: { task: FollowUpTask; compact: boolean }) {
+  return (
+    <Panel
+      className={compact ? "p-4" : "p-5"}
+      style={{ borderColor: "color-mix(in srgb, var(--warn) 28%, transparent)" }}
+    >
+      <div className="flex items-start justify-between gap-3 mb-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Pill tone="warn">Follow-up</Pill>
+          {task.label && <Pill tone="neutral">{task.label}</Pill>}
+        </div>
+        <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">
+          {timeAgo(task.completedAt || task.updatedAt)}
+        </span>
+      </div>
+      <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
+      <ul className="mt-1.5 list-disc pl-4 text-[13px] text-[var(--text-2)] leading-snug">
+        {task.followUps.slice(0, compact ? 2 : 6).map((item, i) => (
+          <li key={i} className="line-clamp-2">{item}</li>
+        ))}
+      </ul>
+      <a
+        href={`/tasks?task=${encodeURIComponent(task.id)}`}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--text)]"
+        style={{ border: "1px solid var(--line)" }}
+      >
+        Open task {task.id}
+      </a>
+    </Panel>
+  );
+}
+
 interface BlockedTask {
   id: string;
   title: string;
+  status?: string;
   blockKind: string | null;
+  attentionKind?: string;
+  label?: string;
   reason: string | null;
+  recurrences?: number;
+  blockedAt?: string | null;
   updatedAt: string;
 }
 
@@ -253,14 +302,17 @@ function BlockedCard({
         <div className="flex items-center gap-2 flex-wrap">
           <Pill tone="down">
             <AlertTriangle className="w-3 h-3" />
-            Blocked task
+            {task.attentionKind === "repeat_block" ? "Blocked again" : "Blocked task"}
           </Pill>
-          {task.blockKind && (
-            <Pill tone="neutral">{BLOCK_KIND_LABEL[task.blockKind] || task.blockKind}</Pill>
+          {(task.label || task.blockKind) && (
+            <Pill tone="neutral">{task.label || BLOCK_KIND_LABEL[task.blockKind ?? ""] || task.blockKind}</Pill>
+          )}
+          {(task.recurrences ?? 0) >= 2 && task.attentionKind !== "repeat_block" && (
+            <Pill tone="neutral">{task.recurrences}× blocked</Pill>
           )}
         </div>
         <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 mt-1">
-          {timeAgo(task.updatedAt)}
+          {timeAgo(task.blockedAt || task.updatedAt)}
         </span>
       </div>
 
@@ -286,7 +338,7 @@ function BlockedCard({
           {busy ? "Unblocking…" : "Unblock"}
         </button>
         <a
-          href="/tasks"
+          href={`/tasks?task=${encodeURIComponent(task.id)}`}
           className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--text)]"
           style={{ border: "1px solid var(--line)" }}
         >
@@ -301,25 +353,29 @@ function BlockedCard({
 export function ApprovalInbox({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
   const [requests, setRequests] = useState<Req[]>([]);
   const [blockedTasks, setBlockedTasks] = useState<BlockedTask[]>([]);
+  const [followUpTasks, setFollowUpTasks] = useState<FollowUpTask[]>([]);
   const [pending, setPending] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const data = await getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedTask[] }>(
+    const data = await getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedTask[]; followUpTasks?: FollowUpTask[] }>(
       "/api/hermes/requests?status=awaiting_approval&take=50"
     );
     if (data) {
       setRequests(data.requests ?? []);
       setBlockedTasks(data.blockedTasks ?? []);
-      setPending(data.pending ?? (data.requests?.length ?? 0) + (data.blockedTasks?.length ?? 0));
+      setFollowUpTasks(data.followUpTasks ?? []);
+      setPending(data.pending ?? (data.requests?.length ?? 0) + (data.blockedTasks?.length ?? 0) + (data.followUpTasks?.length ?? 0));
     }
     setLoaded(true);
   }, []);
 
   useEffect(() => {
-    load();
+    // First fetch is scheduled (not called synchronously in the effect body)
+    // to satisfy react-hooks/set-state-in-effect.
+    const first = setTimeout(load, 0);
     const iv = setInterval(load, 6000);
-    return () => clearInterval(iv);
+    return () => { clearTimeout(first); clearInterval(iv); };
   }, [load]);
 
   // optimistic removal, then refetch to reconcile
@@ -333,20 +389,25 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
     [load]
   );
 
-  const totalCount = pending || requests.length + blockedTasks.length;
+  const totalCount = pending || requests.length + blockedTasks.length + followUpTasks.length;
   const visibleRequests = compact ? requests.slice(0, 3) : requests;
   const remainingSlots = compact ? Math.max(0, 3 - visibleRequests.length) : blockedTasks.length;
   const visibleBlocked = compact ? blockedTasks.slice(0, remainingSlots) : blockedTasks;
-  const isEmpty = requests.length === 0 && blockedTasks.length === 0;
+  const followSlots = compact ? Math.max(0, 3 - visibleRequests.length - visibleBlocked.length) : followUpTasks.length;
+  const visibleFollowUps = followUpTasks.slice(0, followSlots);
+  const isEmpty = requests.length === 0 && blockedTasks.length === 0 && followUpTasks.length === 0;
 
   return (
     <div className={`flex h-full flex-col ${className}`}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-4">
         <Eyebrow>Approval inbox</Eyebrow>
-        <Pill tone={totalCount > 0 ? "accent" : "neutral"}>
-          {totalCount} pending
-        </Pill>
+        <div className="flex items-center gap-1.5">
+          {requests.length > 0 && <Pill tone="warn">{requests.length} to approve</Pill>}
+          {blockedTasks.length > 0 && <Pill tone="down">{blockedTasks.length} blocked on you</Pill>}
+          {followUpTasks.length > 0 && <Pill tone="warn">{followUpTasks.length} follow-up{followUpTasks.length === 1 ? "" : "s"}</Pill>}
+          {totalCount === 0 && <Pill tone="neutral">0 pending</Pill>}
+        </div>
       </div>
 
       {loaded && isEmpty ? (
@@ -354,7 +415,7 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
           <EmptyState
             icon={<Check className="w-6 h-6" style={{ color: "var(--up)" }} />}
             title="Nothing needs you right now — you're clear."
-            hint="Side-effecting work and blocked tasks waiting on your call will land here."
+            hint="Side-effecting work, blocked tasks waiting on your call, and explicit follow-ups from completed tasks land here."
           />
         </Panel>
       ) : isEmpty ? (
@@ -383,7 +444,10 @@ export function ApprovalInbox({ compact = false, className = "" }: { compact?: b
               onAction={() => handleAction(task.id)}
             />
           ))}
-          {compact && totalCount > visibleRequests.length + visibleBlocked.length && (
+          {visibleFollowUps.map((task) => (
+            <FollowUpCard key={task.id} task={task} compact={compact} />
+          ))}
+          {compact && totalCount > visibleRequests.length + visibleBlocked.length + visibleFollowUps.length && (
             <a
               href="/hermes"
               className="inline-flex items-center gap-1 self-start text-[12.5px] font-medium transition-colors"

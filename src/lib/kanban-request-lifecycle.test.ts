@@ -48,3 +48,28 @@ test("missing mirror retains queued state but flags dispatcher attention", () =>
   assert.equal(lifecycle.status, "queued");
   assert.equal(lifecycle.dispatcherAttention, true);
 });
+
+test("task blocked a second time (triage + block_loop_detected) stays blocked with the latest reason", () => {
+  const lifecycle = deriveRequestLifecycle(
+    request,
+    {
+      id: "t_1", status: "triage", blockKind: "needs_input", blockRecurrences: 2, blockCount: 2,
+      blockEventKind: "block_loop_detected", blockReason: "Second, current question",
+      lastFailureError: null, syncedAt: now,
+    },
+    [{ taskId: "t_1", kind: "blocked", createdAt: new Date(now.getTime() - 60_000), payload: '{"reason":"First, stale question"}' }],
+    now,
+  );
+  assert.equal(lifecycle.status, "blocked");
+  assert.equal(lifecycle.blockerReason, "Second, current question");
+  assert.equal(lifecycle.attention?.kind, "repeat_block");
+  assert.equal(lifecycle.dispatcherAttention, false);
+});
+
+test("approval-required request is labelled distinctly from a blocked task", () => {
+  const pending = { status: "awaiting_approval", createdAt: now, hermesTaskId: null };
+  const lifecycle = deriveRequestLifecycle(pending, null, [], now);
+  assert.equal(lifecycle.status, "awaiting_approval");
+  assert.equal(lifecycle.label, "Awaiting approval");
+  assert.equal(lifecycle.blockerReason, null);
+});

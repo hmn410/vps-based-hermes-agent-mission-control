@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deriveRequestLifecycle } from "@/lib/kanban-request-lifecycle";
+import { ATTENTION_CANDIDATE_STATUSES, deriveTaskAttention } from "@/lib/task-attention";
 
 export const dynamic = "force-dynamic";
 
-// Blocked kanban tasks that genuinely need a human — excludes "dependency"
-// (auto-resumes on its own once the parent task finishes, no action needed).
-const BLOCKED_KINDS_NEEDING_YOU = ["needs_input", "capability", "transient"];
+// Kanban tasks that genuinely need a human are decided by the shared
+// deriveTaskAttention() model: `blocked` cards, AND Hermes' repeat-block case
+// (2nd same-kind block → `triage` + block_loop_detected), which the old
+// `status: "blocked"` query silently dropped. Dependency waits are excluded.
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -14,15 +16,32 @@ export async function GET(req: Request) {
   const take = Math.min(Number(url.searchParams.get("take") || 50), 200);
   const where = status ? { status: { in: status.split(",") } } : {};
 
-  const [requests, approvalPending, blockedTasks] = await Promise.all([
+  const [requests, approvalPending, candidateTasks, doneTasks] = await Promise.all([
     prisma.agentRequest.findMany({ where, orderBy: { createdAt: "desc" }, take }),
     prisma.agentRequest.count({ where: { status: "awaiting_approval" } }),
     prisma.hermesTask.findMany({
-      where: { status: "blocked", blockKind: { in: BLOCKED_KINDS_NEEDING_YOU } },
+      where: { status: { in: ATTENTION_CANDIDATE_STATUSES } },
       orderBy: { updatedAt: "desc" },
-      take: 50,
+      take: 200,
+    }),
+    // Completed tasks are candidates only for explicit follow-ups (followUps
+    // Json, mirrored from kanban_complete metadata). Archiving the card on
+    // /tasks is the acknowledgement that clears it.
+    prisma.hermesTask.findMany({
+      where: { status: { in: ["done", "completed"] } },
+      orderBy: { completedAt: "desc" },
+      take: 200,
     }),
   ]);
+  const blockedTasks = candidateTasks
+    .map((task) => ({ task, attention: deriveTaskAttention(task) }))
+    .filter(({ attention }) => attention.needsYou)
+    .sort((a, b) => (b.task.blockedAt?.getTime() ?? 0) - (a.task.blockedAt?.getTime() ?? 0))
+    .slice(0, 50);
+  const followUpTasks = doneTasks
+    .map((task) => ({ task, attention: deriveTaskAttention(task) }))
+    .filter(({ attention }) => attention.kind === "follow_up")
+    .slice(0, 50);
 
   const taskIds = requests.flatMap((request) => request.hermesTaskId ? [request.hermesTaskId] : []);
   const [linkedTasks, linkedEvents] = taskIds.length
@@ -47,19 +66,34 @@ export async function GET(req: Request) {
     return { ...request, status: lifecycle.status, lifecycle };
   });
 
-  // Total "needs you" count spans both surfaces — pre-flight approvals AND
-  // tasks that already started and then genuinely stalled on a human.
-  const pending = approvalPending + blockedTasks.length;
+  // Total "needs you" count spans every surface — pre-flight approvals, tasks
+  // that started and then stalled on a human, and completed tasks with an
+  // explicit follow-up for Josh.
+  const pending = approvalPending + blockedTasks.length + followUpTasks.length;
 
   return NextResponse.json({
     requests: projectedRequests,
     pending,
     approvalPending,
-    blockedTasks: blockedTasks.map((t) => ({
+    followUpTasks: followUpTasks.map(({ task: t, attention }) => ({
       id: t.id,
       title: t.title,
+      status: t.status,
+      label: attention.label,
+      followUps: attention.followUps,
+      completedAt: t.completedAt,
+      updatedAt: t.updatedAt,
+    })),
+    blockedTasks: blockedTasks.map(({ task: t, attention }) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
       blockKind: t.blockKind,
-      reason: t.lastFailureError || null,
+      attentionKind: attention.kind,
+      label: attention.label,
+      reason: attention.reason,
+      recurrences: attention.recurrences,
+      blockedAt: t.blockedAt,
       updatedAt: t.updatedAt,
     })),
   });

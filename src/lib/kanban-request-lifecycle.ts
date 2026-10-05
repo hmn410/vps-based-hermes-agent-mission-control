@@ -1,3 +1,5 @@
+import { deriveTaskAttention, type TaskAttention } from "./task-attention";
+
 export const DISPATCH_ATTENTION_MS = 2 * 60 * 1000;
 
 type RequestLike = {
@@ -11,7 +13,12 @@ type TaskLike = {
   status: string;
   startedAt?: Date | null;
   blockKind?: string | null;
+  blockReason?: string | null;
+  blockEventKind?: string | null;
+  blockRecurrences?: number | null;
+  blockCount?: number | null;
   lastFailureError?: string | null;
+  followUps?: unknown;
   syncedAt?: Date | null;
 };
 
@@ -30,6 +37,8 @@ export type RequestLifecycle = {
   latestEvent: { kind: string; createdAt: Date; message: string | null } | null;
   blockerReason: string | null;
   mirrorFreshnessMs: number | null;
+  /** Shared task-attention projection (null when there is no live mirrored task). */
+  attention: TaskAttention | null;
 };
 
 function parseEventMessage(payload?: string | null): string | null {
@@ -61,47 +70,62 @@ export function deriveRequestLifecycle(
     ? { kind: latest.kind, createdAt: latest.createdAt, message: parseEventMessage(latest.payload) }
     : null;
   const mirrorFreshnessMs = task?.syncedAt ? Math.max(0, now.getTime() - task.syncedAt.getTime()) : null;
+  const base = { latestEvent, mirrorFreshnessMs };
 
   if (!request.hermesTaskId || !task) {
     return {
+      ...base,
       status: request.status,
-      label: request.status === "queued" ? "Queued for dispatcher" : request.status,
+      label: request.status === "awaiting_approval"
+        ? "Awaiting approval"
+        : request.status === "queued" ? "Queued for dispatcher" : request.status,
       queueAgeMs,
       dispatcherAttention: request.status === "queued" && (queueAgeMs ?? 0) >= DISPATCH_ATTENTION_MS,
-      latestEvent,
       blockerReason: null,
-      mirrorFreshnessMs,
+      attention: null,
     };
   }
 
   const taskStatus = task.status.toLowerCase();
   if (["done", "completed", "archived"].includes(taskStatus)) {
-    return { status: "done", label: "Done", queueAgeMs: null, dispatcherAttention: false, latestEvent, blockerReason: null, mirrorFreshnessMs };
-  }
-  if (taskStatus === "blocked") {
+    // A completed task can still need Josh (explicit completion follow-ups).
+    const doneAttention = deriveTaskAttention(task);
+    const followUp = doneAttention.kind === "follow_up";
     return {
+      ...base, status: "done", label: followUp ? doneAttention.label : "Done", queueAgeMs: null,
+      dispatcherAttention: false, blockerReason: null, attention: followUp ? doneAttention : null,
+    };
+  }
+  const attention = deriveTaskAttention(task);
+  // Needs a human — including Hermes' 2nd same-kind block, which lands in
+  // `triage` (block_loop_detected) and previously read as "Queued for dispatcher".
+  if (attention.needsYou) {
+    return {
+      ...base,
       status: "blocked",
-      label: "Blocked",
+      label: attention.label,
       queueAgeMs: null,
       dispatcherAttention: false,
-      latestEvent,
-      blockerReason: task.lastFailureError || latestEvent?.message || task.blockKind || "Waiting for input",
-      mirrorFreshnessMs,
+      blockerReason: attention.reason || latestEvent?.message || task.blockKind || "Waiting for input",
+      attention,
     };
+  }
+  if (attention.kind === "dependency") {
+    return { ...base, status: "waiting_for_dispatch", label: attention.label, queueAgeMs, dispatcherAttention: false, blockerReason: null, attention };
   }
   if (["ready", "todo", "triage"].includes(taskStatus)) {
     return {
+      ...base,
       status: "waiting_for_dispatch",
       label: "Queued for dispatcher",
       queueAgeMs,
       dispatcherAttention: (queueAgeMs ?? 0) >= DISPATCH_ATTENTION_MS,
-      latestEvent,
       blockerReason: null,
-      mirrorFreshnessMs,
+      attention,
     };
   }
   if (taskStatus === "review") {
-    return { status: "review", label: "In review", queueAgeMs: null, dispatcherAttention: false, latestEvent, blockerReason: null, mirrorFreshnessMs };
+    return { ...base, status: "review", label: "In review", queueAgeMs: null, dispatcherAttention: false, blockerReason: null, attention };
   }
-  return { status: "running", label: "Running", queueAgeMs: null, dispatcherAttention: false, latestEvent, blockerReason: null, mirrorFreshnessMs };
+  return { ...base, status: "running", label: "Running", queueAgeMs: null, dispatcherAttention: false, blockerReason: null, attention };
 }
