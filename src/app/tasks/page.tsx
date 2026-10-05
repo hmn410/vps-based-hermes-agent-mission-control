@@ -37,6 +37,7 @@ interface KanbanTask {
   blockCount?: number | null;
   blockedAt?: string | null;
   lastFailureError?: string | null;
+  followUps?: unknown;
   syncedAt: string;
 }
 
@@ -104,20 +105,27 @@ function toneVar(t: Tone): string {
 function AttentionNote({ task, clamp }: { task: KanbanTask; clamp: boolean }) {
   const a = deriveTaskAttention(task);
   if (!a.needsYou && a.kind !== "dependency") return null;
+  // follow_up (completed task with explicit human follow-ups) uses the warn
+  // tone; blocked / repeat-blocked use down.
+  const accent = a.needsYou ? `var(--${a.tone === "neutral" ? "text-3" : a.tone})` : "var(--line)";
   return (
     <div
       className="mt-2.5 rounded-[8px] px-2.5 py-2 text-[11.5px] leading-snug"
       style={{
-        color: a.needsYou ? "var(--down)" : "var(--text-3)",
-        background: a.needsYou ? "color-mix(in srgb, var(--down) 8%, transparent)" : "transparent",
-        border: `1px solid color-mix(in srgb, ${a.needsYou ? "var(--down)" : "var(--line)"} 30%, transparent)`,
+        color: a.needsYou ? accent : "var(--text-3)",
+        background: a.needsYou ? `color-mix(in srgb, ${accent} 8%, transparent)` : "transparent",
+        border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
       }}
       role={a.needsYou ? "status" : undefined}
     >
       <span className="font-semibold">{a.needsYou ? "Needs you · " : ""}{a.label}</span>
       {a.recurrences >= 2 && a.kind !== "repeat_block" && <span> · blocked {a.recurrences}×</span>}
-      {a.reason && <p className={`mt-1 text-[var(--text-2)] whitespace-pre-wrap ${clamp ? "line-clamp-3" : ""}`}>{a.reason}</p>}
-      {task.blockedAt && <p className="mt-1 num text-[10.5px] text-[var(--text-4)]">since {timeAgo(task.blockedAt)}</p>}
+      {a.kind === "follow_up" ? (
+        <ul className={`mt-1 list-disc pl-4 text-[var(--text-2)] ${clamp ? "line-clamp-3" : ""}`}>
+          {a.followUps.map((item, i) => <li key={i} className="whitespace-pre-wrap">{item}</li>)}
+        </ul>
+      ) : a.reason && <p className={`mt-1 text-[var(--text-2)] whitespace-pre-wrap ${clamp ? "line-clamp-3" : ""}`}>{a.reason}</p>}
+      {task.blockedAt && a.kind !== "follow_up" && <p className="mt-1 num text-[10.5px] text-[var(--text-4)]">since {timeAgo(task.blockedAt)}</p>}
     </div>
   );
 }
@@ -126,7 +134,7 @@ function AttentionNote({ task, clamp }: { task: KanbanTask; clamp: boolean }) {
 function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => void }) {
   const attention = deriveTaskAttention(task);
   const col = attention.column as Column;
-  const tone = attention.needsYou ? "down" : columnTone(col);
+  const tone = attention.needsYou ? attention.tone : columnTone(col);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -217,7 +225,7 @@ function TaskCard({
 }) {
   const attention = deriveTaskAttention(task);
   const col = attention.column as Column;
-  const tone = attention.needsYou ? "down" : columnTone(col);
+  const tone = attention.needsYou ? attention.tone : columnTone(col);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Synchronous re-entrancy guard: `busy` state isn't visible to a second
@@ -410,7 +418,12 @@ export default function TasksPage() {
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [historyStale, setHistoryStale] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // Deep link from the approval inbox / follow-up queue: /tasks?task=<id>
+  // opens that task's detail modal. Lazy init (no effect): the modal only
+  // renders once tasks load client-side, so SSR (null) can't mismatch.
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("task"),
+  );
   const lastTasks = useRef<KanbanTask[]>([]);
   // Successfully archived ids that the lagging mirror may still return.
   const pendingRemovals = useRef<PendingRemovals>(new Map());

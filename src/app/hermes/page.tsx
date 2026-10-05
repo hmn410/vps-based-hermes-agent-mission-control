@@ -23,6 +23,7 @@ import {
   Eyebrow,
 } from "@/components/ui/kit";
 import { HermesDispatches } from "@/components/hermes-dispatches";
+import { FollowUpCard, type FollowUpTask } from "@/components/approval-inbox";
 import cronstrue from "cronstrue";
 
 // Hermes' cron list already returns human text for most schedules
@@ -418,7 +419,7 @@ function BlockedOnYouCard({ task }: { task: BlockedOnYou }) {
       </div>
       <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
       {task.reason && <p className="mt-1.5 text-[13px] text-[var(--text-2)] leading-snug line-clamp-4 whitespace-pre-wrap">{task.reason}</p>}
-      <a href="/tasks" className="mt-3 inline-flex text-[12px] text-[var(--accent)]">Open on task board →</a>
+      <a href={`/tasks?task=${encodeURIComponent(task.id)}`} className="mt-3 inline-flex text-[12px] text-[var(--accent)]">Open on task board →</a>
     </Panel>
   );
 }
@@ -701,6 +702,7 @@ export default function HermesPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [inbox, setInbox] = useState<Req[]>([]);
   const [blockedOnYou, setBlockedOnYou] = useState<BlockedOnYou[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
   const [pending, setPending] = useState(0);
   const [events, setEvents] = useState<Ev[]>([]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -711,7 +713,7 @@ export default function HermesPage() {
   const load = useCallback(async () => {
     const [h, reqs, act, cr] = await Promise.all([
       getJSON<Health>("/api/hermes/health"),
-      getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedOnYou[] }>(
+      getJSON<{ requests: Req[]; pending: number; blockedTasks?: BlockedOnYou[]; followUpTasks?: FollowUpTask[] }>(
         "/api/hermes/requests?status=awaiting_approval&take=50"
       ),
       getJSON<{ events: Ev[] }>("/api/hermes/activity?take=30"),
@@ -721,6 +723,7 @@ export default function HermesPage() {
     if (reqs) {
       setInbox(reqs.requests ?? []);
       setBlockedOnYou(reqs.blockedTasks ?? []);
+      setFollowUps(reqs.followUpTasks ?? []);
       setPending(reqs.pending ?? reqs.requests?.length ?? 0);
     }
     if (act) setEvents(act.events ?? []);
@@ -799,7 +802,7 @@ export default function HermesPage() {
               <Skeleton className="h-40" />
               <Skeleton className="h-40" />
             </div>
-          ) : inbox.length === 0 && blockedOnYou.length === 0 ? (
+          ) : inbox.length === 0 && blockedOnYou.length === 0 && followUps.length === 0 ? (
             <p className="px-1 text-[12.5px] text-[var(--text-3)]">
               Clear — side-effecting dashboard requests appear here before Hermes acts on them.
             </p>
@@ -810,6 +813,9 @@ export default function HermesPage() {
               ))}
               {blockedOnYou.map((task) => (
                 <BlockedOnYouCard key={task.id} task={task} />
+              ))}
+              {followUps.map((task) => (
+                <FollowUpCard key={task.id} task={task} compact={false} />
               ))}
             </div>
           )}

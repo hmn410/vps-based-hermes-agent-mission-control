@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionHeader, Panel, Pill, EmptyState, Skeleton } from "@/components/ui/kit";
 import { Cpu, Activity, ExternalLink } from "lucide-react";
 import { keepLastKnownSnapshot } from "@/lib/task-snapshot";
-import { activeTasks, activityForTask, describeExecutionEvent, type TelemetryHealth } from "@/lib/live-work";
+import { activeTasks, activityForTask, describeExecutionEvent, mergeTaskEvents, type TelemetryHealth } from "@/lib/live-work";
 import { deriveTaskAttention } from "@/lib/task-attention";
 
 const LIVE_REFRESH_MS = 1500;
@@ -83,7 +83,8 @@ function TelemetryNotice({ telemetry }: { telemetry: TelemetryHealth | null }) {
 }
 export function LiveOrchestrator({ expanded = false }: { expanded?: boolean }) {
   const [tasks, setTasks] = useState<LiveTask[]>([]); const [events, setEvents] = useState<TaskEvent[]>([]); const [feed, setFeed] = useState<TaskEvent[]>([]); const [telemetry, setTelemetry] = useState<TelemetryHealth | null>(null); const [loaded, setLoaded] = useState(false); const [snapshotStale, setSnapshotStale] = useState(false); const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null); const [now, setNow] = useState(Date.now()); const lastTasks = useRef<LiveTask[]>([]);
-  const load = useCallback(async () => { try { const r = await fetch("/api/hermes/tasks"); if (r.ok) { const d = await r.json(); const snapshot = keepLastKnownSnapshot(lastTasks.current, d.tasks ?? [], d.confirmedEmpty === true); lastTasks.current = snapshot.items; setTasks(snapshot.items); setSnapshotStale(snapshot.stale); if (!snapshot.stale) setEvents(Array.isArray(d.events) ? d.events : []); setFeed(Array.isArray(d.feed) ? d.feed : []); setTelemetry(d.telemetry ?? null); } } catch { /* keep last known data */ } finally { setLoaded(true); setNextRefreshAt(Date.now() + LIVE_REFRESH_MS); } }, []);
+  const load = useCallback(async () => { try { const r = await fetch("/api/hermes/tasks"); if (r.ok) { const d = await r.json(); const snapshot = keepLastKnownSnapshot(lastTasks.current, d.tasks ?? [], d.confirmedEmpty === true); lastTasks.current = snapshot.items; setTasks(snapshot.items); setSnapshotStale(snapshot.stale); // Events are merged (dedupe by id, newest-first) independently of task-snapshot staleness, so new comments/heartbeats always land and an empty/truncated poll never erases them.
+setEvents((prev) => mergeTaskEvents(prev, Array.isArray(d.events) ? d.events : [])); setFeed((prev) => mergeTaskEvents(prev, Array.isArray(d.feed) ? d.feed : [], 300)); setTelemetry(d.telemetry ?? null); } } catch { /* keep last known data */ } finally { setLoaded(true); setNextRefreshAt(Date.now() + LIVE_REFRESH_MS); } }, []);
   useEffect(() => { load(); const iv = setInterval(load, LIVE_REFRESH_MS); const clock = setInterval(() => setNow(Date.now()), 250); return () => { clearInterval(iv); clearInterval(clock); }; }, [load]);
   const active = activeTasks(tasks).sort((a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()); const runningCount = tasks.filter((t) => normStatus(t.status).includes("running")).length; const refreshIn = nextRefreshAt == null ? null : Math.max(0, Math.ceil((nextRefreshAt - now) / 1000));
   return <div><SectionHeader label="Live" title="What the orchestrator is doing right now" action={<span className="inline-flex items-center gap-1.5 num text-[11px] text-[var(--text-3)]"><Activity className="w-3.5 h-3.5" style={{ color: runningCount ? "var(--accent)" : undefined }} />{snapshotStale ? "showing last successful task snapshot" : runningCount ? `${runningCount} running` : "idle"}{refreshIn != null ? ` · refresh ${refreshIn}s` : ""}</span>} />
