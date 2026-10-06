@@ -175,7 +175,8 @@ function ThreadCard({ thread, initiallyOpen, onQueued }: { thread: Thread<Req>; 
   const root = thread.messages[0];
   const latest = thread.messages[thread.messages.length - 1];
   const state = threadState(thread);
-  const preview = state !== "done" ? latest.error || latest.result : null;
+  // Failed threads are filed under Done but keep their error visible.
+  const preview = latest.error || (state !== "done" ? latest.result : null);
   const replies = thread.messages.length - 1;
   const req = root as Req;
   return (

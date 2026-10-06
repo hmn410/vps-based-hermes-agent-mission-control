@@ -13,6 +13,8 @@ export interface ThreadMessage {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  /** Server projection from /api/hermes/requests (deriveRequestLifecycle). */
+  lifecycle?: { attention?: { kind?: string; needsYou?: boolean } | null } | null;
 }
 
 export interface Thread<M extends ThreadMessage = ThreadMessage> {
@@ -25,10 +27,17 @@ export type ThreadFilter = ThreadState | "all";
 
 export const THREAD_PAGE_SIZE = 20;
 
-// Waiting on Josh: pre-flight approval, a block, a review hand-off, or a
-// failure he should correct/retry.
-const NEEDS_REPLY = new Set(["awaiting_approval", "blocked", "review", "failed"]);
-const DONE = new Set(["done", "rejected"]);
+// "Needs reply" follows the shared task-attention contract
+// (src/lib/task-attention.ts): only an explicit, CURRENT human action counts —
+// a pre-flight approval (awaiting_approval), a current block the request
+// lifecycle projected as `blocked`, or any lifecycle attention with needsYou
+// (incl. a done task with explicit completion follow-ups). `review` is
+// informational (Hermes runs its own reviewer), so it stays Active. `failed`
+// is a terminal error, i.e. history: it is filed under Done (still labelled
+// "Failed"). If a failed request's linked task is still live and blocked, the
+// API lifecycle already reports `blocked`, which lands in Needs reply.
+const NEEDS_REPLY = new Set(["awaiting_approval", "blocked"]);
+const DONE = new Set(["done", "rejected", "failed", "cancelled", "canceled"]);
 
 const time = (d: string) => {
   const t = new Date(d).getTime();
@@ -59,8 +68,9 @@ function latestTime(thread: Thread): number {
 }
 
 export function threadState(thread: Thread): ThreadState {
-  const status = latest(thread).status;
-  if (NEEDS_REPLY.has(status)) return "needs_reply";
+  const message = latest(thread);
+  const status = message.status;
+  if (NEEDS_REPLY.has(status) || message.lifecycle?.attention?.needsYou) return "needs_reply";
   if (DONE.has(status)) return "done";
   return "active";
 }

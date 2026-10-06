@@ -32,9 +32,53 @@ test("thread state follows the latest message", () => {
   assert.equal(threadState({ id: "x", messages: [msg("1"), msg("2", { status: "running" })] }), "active");
   assert.equal(threadState({ id: "x", messages: [msg("1", { status: "blocked" })] }), "needs_reply");
   assert.equal(threadState({ id: "x", messages: [msg("1", { status: "awaiting_approval" })] }), "needs_reply");
-  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "failed" })] }), "needs_reply");
   assert.equal(threadState({ id: "x", messages: [msg("1", { status: "queued" })] }), "active");
   assert.equal(threadState({ id: "x", messages: [msg("1", { status: "rejected" })] }), "done");
+});
+
+test("failed/cancelled conversations are history (Done), not Needs reply", () => {
+  for (const status of ["failed", "cancelled", "canceled"]) {
+    assert.equal(threadState({ id: "x", messages: [msg("1", { status, error: "boom" })] }), "done", status);
+  }
+  // A failed follow-up after a done original is still Done.
+  assert.equal(threadState({ id: "x", messages: [msg("1"), msg("2", { status: "failed", error: "timeout" })] }), "done");
+  // A failed request whose lifecycle carries no current human action stays Done.
+  assert.equal(
+    threadState({ id: "x", messages: [msg("1", { status: "failed", lifecycle: { attention: { kind: "none", needsYou: false } } })] }),
+    "done",
+  );
+  // A later reply that retried the failure moves the thread on.
+  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "failed" }), msg("2", { status: "running" })] }), "active");
+});
+
+test("current blocks, approvals and explicit follow-ups still need a reply", () => {
+  // Lifecycle projects a currently-blocked linked task as `blocked`.
+  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "blocked", lifecycle: { attention: { kind: "needs_input", needsYou: true } } })] }), "needs_reply");
+  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "awaiting_approval" })] }), "needs_reply");
+  // Done task with explicit completion follow-ups (task-attention follow_up).
+  assert.equal(
+    threadState({ id: "x", messages: [msg("1", { status: "done", lifecycle: { attention: { kind: "follow_up", needsYou: true } } })] }),
+    "needs_reply",
+  );
+  // A blocked request whose block is no longer current is no longer `blocked`.
+  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "waiting_for_dispatch", lifecycle: { attention: { kind: "dependency", needsYou: false } } })] }), "active");
+});
+
+test("review is informational: Active, not Needs reply", () => {
+  assert.equal(threadState({ id: "x", messages: [msg("1", { status: "review", lifecycle: { attention: { kind: "review", needsYou: false } } })] }), "active");
+});
+
+test("counts: failed threads no longer inflate Needs reply", () => {
+  const threads = groupThreads([
+    msg("1", { status: "failed", error: "x" }),
+    msg("2", { status: "failed", error: "y" }),
+    msg("3", { status: "blocked" }),
+    msg("4", { status: "awaiting_approval" }),
+    msg("5", { status: "review" }),
+  ]);
+  assert.deepEqual(countByState(threads), { all: 5, active: 1, needs_reply: 2, done: 2 });
+  assert.deepEqual(filterThreads(threads, "needs_reply", "").map((t) => t.id).sort(), ["3", "4"]);
+  assert.deepEqual(filterThreads(threads, "done", "").map((t) => t.id).sort(), ["1", "2"]);
 });
 
 test("filter + search across title, prompt, replies and results", () => {
