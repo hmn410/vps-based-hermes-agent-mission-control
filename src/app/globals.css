@@ -313,6 +313,43 @@ textarea, input {
   transform: translateY(-1px) scale(0.995);
 }
 
+/* Agents roster: terminal glow for an agent with a task running right now.
+   The one sanctioned glow on a data card; status is also stated in text.
+   A slow opacity "breath" on a pseudo-element (compositor-only, no layout). */
+@keyframes agent-active-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+.panel.agent-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(0, 255, 65, 0.08),
+    inset 0 0 28px -14px var(--accent-glow),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.panel.agent-active::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 22px -4px var(--accent-glow), 0 0 2px 0 var(--accent-glow);
+  animation: agent-active-breathe 3.2s var(--ease-inout) infinite;
+}
+.agent-active-tag {
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent-glow);
+}
+.agent-active-cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: agent-active-breathe 1.6s steps(2, jump-none) infinite;
+}
+
 /* overlays (menus / modals) — the ONLY place a real shadow lives */
 .elevated {
   background: var(--surface-2);
@@ -384,6 +421,8 @@ textarea, input {
   .hq-rise { animation: none; opacity: 1; }
   .hq-ambient::before { animation: none; }
   .panel-interactive:hover { transform: none; }
+  .panel.agent-active::after { animation: none; opacity: 1; }
+  .agent-active-cursor { animation: none; }
   .panel-interactive:active,
   .btn-primary:active,
   .btn-ghost:active { transform: none; }

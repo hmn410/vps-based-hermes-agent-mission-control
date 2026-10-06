@@ -11,6 +11,7 @@ import { Bot, Send } from "lucide-react";
 import { Panel, Pill, Eyebrow, EmptyState, rise } from "@/components/ui/kit";
 import { navLabel } from "@/components/nav-config";
 import { profileForAgent } from "@/lib/agent-roster";
+import { isAgentActivelyWorking } from "@/lib/agent-activity";
 
 interface AgentActivity {
   timestamp: string;
@@ -60,13 +61,13 @@ function timeAgo(dateStr?: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function AgentRow({ agent, task }: { agent: Agent; task: MirrorTask | null }) {
+function AgentRow({ agent, task, active }: { agent: Agent; task: MirrorTask | null; active: boolean }) {
   const status = STATUS[agent.status] ?? { label: agent.status, tone: "neutral" as Tone };
   const profile = profileForAgent(agent.id) ?? agent.id;
   const lastRun = agent.recentActivity?.[0];
   const currentTitle = task?.title ?? (agent.status === "working" ? agent.currentTask : undefined);
   return (
-    <Panel className="p-4">
+    <Panel className={`p-4${active ? " agent-active" : ""}`}>
       <div className="flex items-start gap-3.5">
         <div
           className="w-10 h-10 rounded-[var(--r-md)] flex items-center justify-center text-xl shrink-0"
@@ -86,6 +87,11 @@ function AgentRow({ agent, task }: { agent: Agent; task: MirrorTask | null }) {
               {profile}
             </span>
             <Pill tone={status.tone}>{status.label}</Pill>
+            {active && (
+              <span className="agent-active-tag font-mono text-[10.5px] uppercase tracking-wide" title="A task for this profile is running now">
+                Running now<span className="agent-active-cursor" aria-hidden />
+              </span>
+            )}
           </div>
           <p className="text-[12px] text-[var(--text-3)] mt-1">{agent.role}</p>
 
@@ -131,6 +137,9 @@ function AgentRow({ agent, task }: { agent: Agent; task: MirrorTask | null }) {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<MirrorTask[]>([]);
+  // False when the latest task poll failed: the glow then follows the
+  // bridge's live AgentState instead of a stale earlier task list.
+  const [tasksLive, setTasksLive] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -140,6 +149,7 @@ export default function AgentsPage() {
     ]);
     if (Array.isArray(a)) setAgents(a);
     if (t && Array.isArray(t.tasks)) setTasks(t.tasks);
+    setTasksLive(Boolean(t && Array.isArray(t.tasks)));
     setLoading(false);
   }, []);
 
@@ -195,7 +205,12 @@ export default function AgentsPage() {
       ) : (
         <div className="hq-rise grid grid-cols-1 lg:grid-cols-2 gap-4" style={rise(1)}>
           {agents.map((agent) => (
-            <AgentRow key={agent.id} agent={agent} task={taskFor(agent)} />
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              task={taskFor(agent)}
+              active={isAgentActivelyWorking(agent.status, profileForAgent(agent.id), tasksLive ? tasks : null)}
+            />
           ))}
         </div>
       )}
