@@ -1,7 +1,7 @@
 ---
 name: hermes-wiki
 description: "Use when reading or updating the shared Hermes wiki. One canonical path for all profiles."
-version: 2.0.0
+version: 2.1.0
 metadata:
   hermes:
     tags: [wiki, documentation, memory, pending, daily-notes]
@@ -41,6 +41,10 @@ that nobody else sees. Never create a second wiki anywhere.
    log the work in today's `daily/` note, and add any new durable record to `INDEX.md`.
 4. **Re-read a file right before editing it.** Other profiles and Hermy HQ write
    the same files; use a targeted patch, never overwrite a whole file from a stale copy.
+
+## Operator action handoffs
+
+When work blocks on an action Josh must perform, include the complete copy/paste-ready commands or exact UI steps in both the task comment and user-facing message. State where to run them, their order, expected success result, and when to unblock. Never make Josh remember or reconstruct operational commands from earlier context.
 
 ## Long-term memory rule
 
