@@ -2,7 +2,7 @@
 
 /* Dispatch: the single conversation surface. Composer (with "Dispatch to"
    profile selector) → Approval inbox (shared component, same as Home) →
-   In flight → conversation threads (filter / search / paginated). Recurring
+   conversation threads (filter / search / paginated). Recurring
    jobs moved to /schedules; Hermes activity events moved to Tasks → History. */
 
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -170,7 +170,7 @@ export default function HermesPage() {
         <ApprovalInbox />
       </section>
 
-      {/* In flight + conversation threads (one requests poll) */}
+      {/* Conversation threads (one requests poll) */}
       <section className="mt-12">
         <Suspense fallback={null}>
           <HermesConversations refreshKey={refreshKey} />

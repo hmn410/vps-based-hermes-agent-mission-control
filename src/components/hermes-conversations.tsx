@@ -1,9 +1,8 @@
 "use client";
 
-/* Dispatch page conversations: one poll of /api/hermes/requests feeds both
-   "In flight" (non-terminal requests) and the thread list (original request
-   + follow-ups grouped by conversationId) with status filter, search, and
-   pagination. Replaces the old separate "Latest answers" list and the
+/* Dispatch page conversations: one poll of /api/hermes/requests feeds the
+   thread list (original request + follow-ups grouped by conversationId) with
+   status filter, search, and pagination. Replaces the old separate "Latest answers" list and the
    /follow-ups page (which now redirects here; ?thread=<id> opens a thread). */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,14 +28,6 @@ type Req = ThreadMessage & {
   assignee?: string | null;
   sideEffecting: boolean;
   hermesTaskId?: string | null;
-  lifecycle?: {
-    label: string;
-    queueAgeMs: number | null;
-    dispatcherAttention: boolean;
-    latestEvent: { kind: string; createdAt: string; message: string | null } | null;
-    blockerReason: string | null;
-    mirrorFreshnessMs: number | null;
-  };
 };
 
 type Tone = "neutral" | "up" | "down" | "warn" | "accent";
@@ -48,14 +39,6 @@ function ago(d: string | null): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
-}
-
-function duration(ms: number | null): string | null {
-  if (ms === null) return null;
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  return `${Math.floor(seconds / 3600)}h`;
 }
 
 const TONE: Record<string, Tone> = {
@@ -82,7 +65,6 @@ const LABEL: Record<string, string> = {
   failed: "Failed",
   rejected: "Rejected",
 };
-const TERMINAL = new Set(["done", "failed", "rejected"]);
 
 function ProfileTag({ assignee }: { assignee?: string | null }) {
   if (!assignee || assignee === DEFAULT_DISPATCH_PROFILE) return null;
@@ -99,51 +81,6 @@ function TaskLink({ id }: { id?: string | null }) {
     <a href={`/tasks?task=${encodeURIComponent(id)}`} className="num text-[10.5px] text-[var(--accent)] hover:text-[var(--text)]">
       {id} →
     </a>
-  );
-}
-
-// ── In flight ─────────────────────────────────────────────
-function ActiveCard({ request }: { request: Req }) {
-  const tone = TONE[request.status] || "neutral";
-  const lifecycle = request.lifecycle;
-  const queueAge = duration(lifecycle?.queueAgeMs ?? null);
-  const mirrorAge = duration(lifecycle?.mirrorFreshnessMs ?? null);
-  return (
-    <Panel className="p-4">
-      <div className="flex items-start gap-3">
-        <span className="relative mt-1 flex h-2 w-2 shrink-0">
-          {request.status === "running" && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />}
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-[13.5px] text-[var(--text)]">{request.title}</p>
-            <ProfileTag assignee={request.assignee} />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 num text-[10.5px] text-[var(--text-3)]">
-            {queueAge && <span>Queue age: {queueAge}</span>}
-            {lifecycle?.latestEvent && <span>Latest: {lifecycle.latestEvent.kind} {ago(lifecycle.latestEvent.createdAt)}</span>}
-            {mirrorAge && <span>Mirror: {mirrorAge} ago</span>}
-            <TaskLink id={request.hermesTaskId} />
-          </div>
-          {request.status === "waiting_for_dispatch" && (
-            <p className="mt-2 text-[12px] text-[var(--text-3)]">Waiting for a dispatcher to claim this task.</p>
-          )}
-          {lifecycle?.dispatcherAttention && (
-            <p className="mt-2 text-[12px] text-[var(--warn)]">Dispatcher attention: this task has waited over 2 minutes without a claim.</p>
-          )}
-          {request.status === "blocked" && (
-            <p className="mt-2 text-[12px] text-[var(--down)]">
-              Needs you: {lifecycle?.blockerReason || request.error || "Waiting for input"}{" "}
-              {request.hermesTaskId && (
-                <a href={`/tasks?task=${encodeURIComponent(request.hermesTaskId)}`} className="text-[var(--accent)]">Open task →</a>
-              )}
-            </p>
-          )}
-        </div>
-        <Pill tone={tone}>{lifecycle?.label || LABEL[request.status] || request.status}</Pill>
-      </div>
-    </Panel>
   );
 }
 
@@ -350,21 +287,11 @@ export function HermesConversations({ refreshKey = 0 }: { refreshKey?: number })
   }, [focusThread, focusApplied, loaded, filtered]);
 
   const paged = paginate(filtered, page);
-  const active = requests.filter((r) => !TERMINAL.has(r.status));
 
   if (!loaded) return <Panel><div className="sk m-1 h-24 rounded-[10px]" /></Panel>;
 
   return (
-    <div className="flex flex-col gap-12">
-      <section>
-        <SectionHeader label="Current work" title="In flight" action={<span className="num text-[11px] text-[var(--text-3)]">{active.length} active</span>} />
-        {active.length ? (
-          <div className="flex flex-col gap-2.5">{active.map((request) => <ActiveCard key={request.id} request={request} />)}</div>
-        ) : (
-          <p className="px-1 text-[12.5px] text-[var(--text-3)]">No dashboard-originated work is in flight.</p>
-        )}
-      </section>
-
+    <div className="flex flex-col">
       <section id="threads">
         <SectionHeader
           label="Conversations"
