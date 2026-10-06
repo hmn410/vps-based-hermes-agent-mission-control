@@ -467,9 +467,12 @@ async function mirrorKanban() {
 /* ─────────────── Chief-of-staff daily brief ─────────────── */
 function chicagoDay(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: BRIEF_TIME_ZONE, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
+    timeZone: BRIEF_TIME_ZONE, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
   }).formatToParts(date).reduce((out, p) => ({ ...out, [p.type]: p.value }), {});
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, weekday: parts.weekday, hour: Number(parts.hour) };
+  // hourCycle h23 (not hour12:false): some ICU builds format midnight as "24"
+  // under hour12:false, which made `hour >= BRIEF_HOUR` fire the daily brief
+  // at 00:00 instead of BRIEF_HOUR. `% 24` guards any runtime that still does.
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, weekday: parts.weekday, hour: Number(parts.hour) % 24 };
 }
 function missing(value, label) { return value ? String(value) : `Missing input: ${label}.`; }
 function manualUpcomingSection(input, todayDate) {
