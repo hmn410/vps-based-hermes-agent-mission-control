@@ -23,6 +23,7 @@ import {
   type PendingRemovals,
 } from "@/lib/task-actions";
 import { deriveTaskAttention } from "@/lib/task-attention";
+import { TaskHandoffPanel } from "@/components/task-handoff";
 
 // ── Types ─────────────────────────────────────────────────
 interface KanbanTask {
@@ -188,6 +189,11 @@ function TaskDetailModal({ task, onClose }: { task: KanbanTask; onClose: () => v
           </button>
         </div>
         <div className="p-4 overflow-y-auto grow">
+          {attention.needsYou && (
+            <div className="mb-4 -mt-3">
+              <TaskHandoffPanel taskId={task.id} refreshKey={`${task.status}|${task.blockedAt ?? ""}`} />
+            </div>
+          )}
           {task.result ? (
             <>
               <div className="flex items-center justify-between mb-2">

@@ -15,6 +15,7 @@ import {
   EmptyState,
   Eyebrow,
 } from "@/components/ui/kit";
+import { TaskHandoffPanel } from "@/components/task-handoff";
 
 // ── Types ─────────────────────────────────────────────────
 interface Req {
@@ -60,9 +61,10 @@ export function FollowUpCard({ task, compact }: { task: FollowUpTask; compact: b
       <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
       <ul className="mt-1.5 list-disc pl-4 text-[13px] text-[var(--text-2)] leading-snug">
         {task.followUps.slice(0, compact ? 2 : 6).map((item, i) => (
-          <li key={i} className="line-clamp-2">{item}</li>
+          <li key={i} className={compact ? "line-clamp-2" : "whitespace-pre-wrap break-words"}>{item}</li>
         ))}
       </ul>
+      <TaskHandoffPanel taskId={task.id} lazy={compact} refreshKey={task.completedAt ?? ""} />
       <a
         href={`/tasks?task=${encodeURIComponent(task.id)}`}
         className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--text)]"
@@ -318,10 +320,11 @@ function BlockedCard({
 
       <h3 className="text-[15px] font-medium text-[var(--text)] leading-snug">{task.title}</h3>
       {task.reason && (
-        <p className="mt-1.5 text-[13px] text-[var(--text-2)] leading-snug line-clamp-3">
+        <p className={`mt-1.5 text-[13px] text-[var(--text-2)] leading-snug whitespace-pre-wrap break-words ${compact ? "line-clamp-3" : ""}`}>
           {task.reason}
         </p>
       )}
+      <TaskHandoffPanel taskId={task.id} lazy={compact} refreshKey={task.blockedAt ?? ""} />
 
       <div className="flex items-center gap-2 mt-4">
         <button
@@ -342,7 +345,7 @@ function BlockedCard({
           className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors text-[var(--text-2)] hover:text-[var(--text)]"
           style={{ border: "1px solid var(--line)" }}
         >
-          View on board
+          Open task {task.id}
         </a>
       </div>
     </Panel>

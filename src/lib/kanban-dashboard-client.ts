@@ -96,6 +96,12 @@ export async function kanbanCreateTask({
   });
 }
 
+// Full canonical task detail (task + ALL comments, events, runs with full
+// summaries/metadata). Read-only; the board listing only carries previews.
+export async function kanbanGetTaskDetail<T = unknown>(id: string): Promise<T> {
+  return dashboardFetch<T>(`/api/plugins/kanban/tasks/${encodeURIComponent(id)}`);
+}
+
 // Task lifecycle actions surfaced as buttons on the /tasks page so the
 // common "clear this up" moves don't require opening the full kanban board.
 export type KanbanTaskAction = "unblock" | "archive" | "complete" | "ready";
