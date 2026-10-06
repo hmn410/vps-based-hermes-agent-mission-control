@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Activity as ActivityIcon } from "lucide-react";
-import { Panel, SectionHeader, EmptyState, Skeleton } from "@/components/ui/kit";
+import { Panel, SectionHeader, EmptyState, Skeleton, Pill } from "@/components/ui/kit";
 
 type EvLevel = "info" | "up" | "warn" | "down";
 interface Ev {
@@ -17,6 +17,9 @@ interface Ev {
   agent: string | null;
   level: EvLevel;
   createdAt: string;
+  /** Current lifecycle of the linked request/task, recomputed on every poll by
+   *  /api/hermes/activity. The event row itself is append-only and never changes. */
+  current?: { status: string; label: string; tone: "neutral" | "accent" | "warn" | "up" | "down"; taskId: string | null } | null;
 }
 
 function timeAgo(d: string | null): string {
@@ -81,6 +84,7 @@ function ActivityFeed({ events }: { events: Ev[] }) {
                       <p className="text-[13px] font-medium text-[var(--text)] leading-snug truncate">
                         {e.title}
                       </p>
+                      {e.current && <Pill tone={e.current.tone}>{`Now: ${e.current.label}`}</Pill>}
                       <span className="num text-[10.5px] text-[var(--text-3)] shrink-0 ml-auto">
                         {timeAgo(e.createdAt)}
                       </span>

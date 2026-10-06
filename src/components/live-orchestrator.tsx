@@ -56,11 +56,12 @@ function formatEvent(e: TaskEvent): { icon: string; text: string; tone: Tone } {
     default: return { icon: "•", text: e.kind, tone: "neutral" };
   }
 }
-function EventLine({ event, global = false }: { event: TaskEvent; global?: boolean }) {
+function EventLine({ event, global = false, current }: { event: TaskEvent; global?: boolean; current?: { label: string; tone: Tone } | null }) {
   const f = formatEvent(event);
   return <div className="flex items-baseline gap-2 text-[11.5px]">
     <span className="w-4 shrink-0 text-center" style={{ color: `var(--${f.tone === "neutral" ? "text-3" : f.tone})` }}>{f.icon}</span>
     <span className="flex-1 min-w-0 text-[var(--text-2)] truncate">{global && <span className="text-[var(--text)]">{event.taskLabel ?? event.taskId}: </span>}{f.text}</span>
+    {current && <span className="num shrink-0 text-[10.5px]" title="Current task state" style={{ color: `var(--${current.tone === "neutral" ? "text-3" : current.tone})` }}>now {current.label}</span>}
     <span className="num text-[var(--text-4)] shrink-0">{ago(event.createdAt)}</span>
   </div>;
 }
@@ -81,6 +82,18 @@ function TelemetryNotice({ telemetry }: { telemetry: TelemetryHealth | null }) {
   if (!telemetry.available) return <p className="text-[11px] text-[var(--down)]">Execution telemetry unavailable{telemetry.stale ? " or stale" : ""}. Last successful source read: {ago(telemetry.lastSuccessfulEventReadAt)}.{telemetry.error ? ` ${telemetry.error}` : ""}</p>;
   return <p className="text-[11px] text-[var(--text-3)]">Source read {ago(telemetry.lastSuccessfulEventReadAt)}{telemetry.newestEventId != null ? ` · newest event #${telemetry.newestEventId}` : ""} · heartbeats confirm the worker is alive; reported step/tool details appear inline.</p>;
 }
+/** The execution feed is an immutable event log; each line also shows the
+ *  task's CURRENT state from the same poll, so an old "Waiting on parent" or
+ *  "Promoted to ready" line can't read as still pending. Tasks archived off the
+ *  board are no longer mirrored and say so. */
+function currentTaskState(task: Pick<LiveTask, "status"> & Parameters<typeof deriveTaskAttention>[0] | undefined): { label: string; tone: Tone } {
+  if (!task) return { label: "off board", tone: "neutral" };
+  const k = normStatus(task.status);
+  if (k.includes("done") || k.includes("complete") || k.includes("archiv")) return { label: "Done", tone: "up" };
+  const attention = deriveTaskAttention(task);
+  if (attention.needsYou) return { label: attention.label, tone: "down" };
+  return statusMeta(task.status);
+}
 /** mode="live": the active task cards (Tasks → Live tab).
  *  mode="history": the global execution feed (Tasks → History tab). */
 export function LiveOrchestrator({ mode = "live" }: { mode?: "live" | "history" }) {
@@ -89,8 +102,9 @@ export function LiveOrchestrator({ mode = "live" }: { mode?: "live" | "history" 
 setEvents((prev) => mergeTaskEvents(prev, Array.isArray(d.events) ? d.events : [])); setFeed((prev) => mergeTaskEvents(prev, Array.isArray(d.feed) ? d.feed : [], 300)); setTelemetry(d.telemetry ?? null); } } catch { /* keep last known data */ } finally { setLoaded(true); setNextRefreshAt(Date.now() + LIVE_REFRESH_MS); } }, []);
   useEffect(() => { const first = setTimeout(load, 0); const iv = setInterval(load, LIVE_REFRESH_MS); const clock = setInterval(() => setNow(Date.now()), 250); return () => { clearTimeout(first); clearInterval(iv); clearInterval(clock); }; }, [load]);
   const active = activeTasks(tasks).sort((a, b) => new Date(b.syncedAt).getTime() - new Date(a.syncedAt).getTime()); const runningCount = tasks.filter((t) => normStatus(t.status).includes("running")).length; const refreshIn = nextRefreshAt == null ? null : Math.max(0, Math.ceil((nextRefreshAt - now) / 1000));
+  const tasksById = new Map(tasks.map((t) => [t.id, t]));
   if (mode === "history") {
-    return <section><SectionHeader label="Execution history" title="Recent execution" action={refreshIn != null ? <span className="num text-[11px] text-[var(--text-3)]">refresh {refreshIn}s</span> : undefined} /><TelemetryNotice telemetry={telemetry} />{!loaded ? <Skeleton className="mt-3 h-40" /> : telemetry?.available ? (feed.length ? <Panel className="mt-3 p-4"><div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1" aria-label="Recent execution events; scroll for more">{feed.map((event) => <EventLine key={event.id} event={event} global />)}</div></Panel> : <Panel className="mt-3 p-2"><EmptyState icon={<Activity className="w-6 h-6" />} title="No activity in retained history" hint="The event source is healthy; no execution events remain in retention." /></Panel>) : <Panel className="mt-3 p-4"><TelemetryNotice telemetry={telemetry} /></Panel>}</section>;
+    return <section><SectionHeader label="Execution history" title="Recent execution" action={refreshIn != null ? <span className="num text-[11px] text-[var(--text-3)]">refresh {refreshIn}s</span> : undefined} /><TelemetryNotice telemetry={telemetry} />{!loaded ? <Skeleton className="mt-3 h-40" /> : telemetry?.available ? (feed.length ? <Panel className="mt-3 p-4"><div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1" aria-label="Recent execution events; scroll for more">{feed.map((event) => <EventLine key={event.id} event={event} global current={event.kind === "heartbeat" ? null : currentTaskState(tasksById.get(event.taskId))} />)}</div></Panel> : <Panel className="mt-3 p-2"><EmptyState icon={<Activity className="w-6 h-6" />} title="No activity in retained history" hint="The event source is healthy; no execution events remain in retention." /></Panel>) : <Panel className="mt-3 p-4"><TelemetryNotice telemetry={telemetry} /></Panel>}</section>;
   }
   return <div><SectionHeader label="Live" title="What the orchestrator is doing right now" action={<span className="inline-flex items-center gap-1.5 num text-[11px] text-[var(--text-3)]"><Activity className="w-3.5 h-3.5" style={{ color: runningCount ? "var(--accent)" : undefined }} />{snapshotStale ? "showing last successful task snapshot" : runningCount ? `${runningCount} running` : "idle"}{refreshIn != null ? ` · refresh ${refreshIn}s` : ""}</span>} />
     <div className="mb-4"><TelemetryNotice telemetry={telemetry} /></div>
